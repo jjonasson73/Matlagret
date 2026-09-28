@@ -58,6 +58,8 @@ Regler:
 - Mängd kan vara i kg (viktvaror) eller styck. Använd det kvittot anger.
 - Pant, bärkassar, papper, tvättmedel, hygien och annat som inte är mat: isFood = false.
 - Tolka förkortningar till tydliga namn ("Creme fraich lätt" → "Crème fraiche lätt", "Norrloumi" → "Norrloumi grillost", "Majs förkokt vac" → "Majs förkokt vakuumpackad").
+- Frukt och grönt står ofta med sortnamn: "Aroma", "Pink Lady", "Ingrid Marie", "Granny Smith" är äpplen, "Conference" är päron, "Cherry" och "Piccolo" är tomater. Tolka inte sortnamn som märken eller drycker.
+- Viktvaror (kg) är nästan alltid frukt, grönt, kött, fisk eller ost – aldrig dryck.
 - confidence: "sure" bara när raden är entydig. Hellre "unsure" än en felaktig "likely" – användaren kontrollerar inte "likely".
 - Ange alternatives när en förkortning kan betyda flera varor.
 - zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Mjöl, socker, salt, olja och liknande = basvara.

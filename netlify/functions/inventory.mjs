@@ -5,6 +5,7 @@
 //   { action: "out", id }          slut
 //   { action: "update", id, fields }
 //   { action: "delete", id }
+import { store, KEYS } from "../lib/store.mjs";
 import { json, error, checkKey } from "../lib/http.mjs";
 import { loadInventory, saveInventory, addOrMerge, findItem, updateItem } from "../lib/inventory.mjs";
 import { CATEGORIES, ZONES } from "../lib/rules.mjs";
@@ -42,9 +43,17 @@ export default async (req) => {
     case "out":
       item.status = "out";
       break;
-    case "update":
+    case "update": {
       updateItem(item, body.fields ?? {});
+      item.confidence = "confirmed";
+      // Rättningen gäller även nästa kvitto med samma artikelnummer.
+      if (item.articleNo) {
+        const articles = (await store.get(KEYS.articles)) ?? {};
+        articles[item.articleNo] = { name: item.name, category: item.category, zone: item.zone, unit: item.unit };
+        await store.put(KEYS.articles, articles);
+      }
       break;
+    }
     case "delete":
       inv.items = inv.items.filter((i) => i.id !== item.id);
       break;
