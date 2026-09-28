@@ -53,7 +53,9 @@ test("ingest tar emot multipart-fil från genvägen", async () => {
   const body = await res.json();
   assert.equal(body.kind, "pdf");
   const list = await (await pending(get("/api/pending"))).json();
-  assert.equal(list.pending.at(-1).status, "queued");
+  // Bakgrundsjobbet kan inte startas i testet (inget nät) → felet syns direkt.
+  assert.equal(list.pending.at(-1).status, "error");
+  assert.match(list.pending.at(-1).error, /startade inte/);
 });
 
 test("ingest känner igen PDF skickad som rå fil utan content-type", async () => {

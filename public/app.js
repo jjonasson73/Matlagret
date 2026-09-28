@@ -175,7 +175,21 @@ function proposalCard(p) {
   const card = h("article", { class: "proposal" }, h("header", {}, h("h3", {}, title), p.meta?.total ? h("span", {}, `${p.meta.total} kr`) : null));
 
   if (p.status === "queued" || p.status === "processing") {
-    card.append(h("p", { class: "muted" }, h("span", { class: "spinner" }), " Tolkar…"));
+    // En tolkning tar normalt under två minuter; bakgrundsjobb avbryts efter 15.
+    const since = Date.parse(p.startedAt ?? p.createdAt);
+    const stuck = Date.now() - since > (p.status === "queued" ? 2 : 16) * 60e3;
+    card.append(
+      h("p", { class: "muted" }, h("span", { class: "spinner" }), p.status === "queued" ? " I kö…" : " Tolkar…"),
+    );
+    if (stuck) {
+      card.append(
+        h("p", { class: "error" }, "Det här verkar ha fastnat."),
+        h("menu", {},
+          h("button", { onclick: run(() => decide({ id: p.id, dismiss: true })) }, "Släng"),
+          h("button", { class: "primary", onclick: run(() => decide({ id: p.id, retry: true })) }, "Försök igen"),
+        ),
+      );
+    }
     return card;
   }
   if (p.status === "error") {

@@ -92,6 +92,7 @@ export function photoLines(photo, inventory) {
 export async function processJob(id) {
   await updateProposal(id, (p) => {
     p.status = "processing";
+    p.startedAt = new Date().toISOString();
     p.error = null;
   });
   try {
@@ -139,13 +140,22 @@ export async function processJob(id) {
 // Starta process-background för ett jobb. Svarar 202 direkt.
 export async function startBackground(req, id) {
   const origin = new URL(req.url).origin;
+  let problem;
   try {
-    await fetch(`${origin}/.netlify/functions/process-background`, {
+    const res = await fetch(`${origin}/.netlify/functions/process-background`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": process.env.INGEST_KEY },
       body: JSON.stringify({ id }),
     });
+    if (!res.ok) problem = `HTTP ${res.status}`;
   } catch (e) {
-    console.error("Kunde inte starta bakgrundstolkning", e);
+    problem = e.message;
+  }
+  if (problem) {
+    console.error("Kunde inte starta bakgrundstolkning", id, problem);
+    await updateProposal(id, (p) => {
+      p.status = "error";
+      p.error = `Bakgrundstolkningen startade inte (${problem})`;
+    });
   }
 }

@@ -41,6 +41,8 @@ export default async (req) => {
   if (body.retry) {
     p.status = "queued";
     p.error = null;
+    p.createdAt = new Date().toISOString();
+    delete p.startedAt;
     await savePending(list);
     await startBackground(req, p.id);
     return json({ ok: true, proposal: p });
