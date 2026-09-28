@@ -24,7 +24,7 @@ const ReceiptLine = z.object({
   price: z.number().nullable().describe("Radsumma i kr efter ev. rabatt"),
   isFood: z.boolean(),
   confidence: Guess,
-  alternatives: z.array(z.string()).describe("Andra rimliga tolkningar av förkortningen, tom om säker"),
+  alternatives: z.array(z.string()).describe("Helt andra varor som förkortningen kan betyda, oftast tom"),
   note: z.string().nullable(),
 });
 
@@ -72,7 +72,8 @@ Regler:
 - Frukt och grönt står ofta med sortnamn: "Aroma", "Pink Lady", "Ingrid Marie", "Granny Smith" är äpplen, "Conference" är päron, "Cherry" och "Piccolo" är tomater. Tolka inte sortnamn som märken eller drycker.
 - Viktvaror (kg) är nästan alltid frukt, grönt, kött, fisk eller ost – aldrig dryck.
 - confidence: "sure" bara när raden är entydig. Hellre "unsure" än en felaktig "likely" – användaren kontrollerar inte "likely".
-- Ange alternatives när en förkortning kan betyda flera varor.
+- alternatives: bara när förkortningen kan betyda helt olika varor ("Creme fraich" → crème fraiche eller gräddfil). Lista inte varianter av samma vara (fryst/torkad/på burk, olika fetthalter) och inte "Annan …". Hellre en tom lista än konstlade alternativ.
+- Är varan tydlig men förpackningen okänd, välj den vanligaste formen och sätt confidence "sure".
 - zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Mjöl, socker, salt, olja och liknande = basvara.
 
 Användarens egna regler (gäller alltid):
