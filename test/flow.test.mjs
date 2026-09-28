@@ -100,6 +100,29 @@ test("godkänn rader från ett kvittoförslag", async () => {
   assert.equal(body.proposal.status, "done");
 });
 
+test("inlärning: godkänn alla lär bara in säkra rader, rättning i lagret lär in", async () => {
+  const { store, KEYS } = await import("../netlify/lib/store.mjs");
+  await store.put(KEYS.articles, {});
+  const form = new FormData();
+  form.append("text", "kvittotext 2");
+  const { id } = await (await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }))).json();
+  const r = { ...receipt, lines: [
+    { ...receipt.lines[1], articleNo: "777", name: "Aromatics Apple dryck", category: "dryck", confidence: "likely" },
+    { ...receipt.lines[1], articleNo: "888", name: "Mjölk 3%", confidence: "sure" },
+  ] };
+  await updateProposal(id, (p) => Object.assign(p, { status: "ready", source: "receipt", meta: {}, lines: receiptLines(r, {}) }));
+  const body = await (await pending(post("/api/pending", { id, acceptAll: true }))).json();
+
+  let articles = await store.get(KEYS.articles);
+  assert.ok(!articles["777"], "osäker gissning lärs inte in");
+  assert.equal(articles["888"].name, "Mjölk 3%");
+
+  const apple = body.inventory.items.find((i) => i.articleNo === "777");
+  await inventory(post("/api/inventory", { action: "update", id: apple.id, fields: { name: "Äpple Aroma", category: "grönsak" } }));
+  articles = await store.get(KEYS.articles);
+  assert.equal(articles["777"].name, "Äpple Aroma");
+});
+
 test("fotoavstämning: syns → bekräfta, syns inte → troligen slut", () => {
   const inv = { items: [makeItem({ name: "Mjölk", zone: "kyl", category: "mejeri" }), makeItem({ name: "Smör", zone: "kyl", category: "mejeri" })] };
   const [milk] = inv.items;

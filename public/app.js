@@ -130,27 +130,51 @@ function itemRow(item) {
 
 const fmtQty = (q) => (Number.isInteger(q) ? String(q) : q.toFixed(2).replace(/\.?0+$/, "").replace(".", ","));
 
-function openItemDialog(item) {
+const ITEM_FIELDS = ["name", "qty", "unit", "zone", "category", "bestBefore"];
+
+// Samma dialog används för lagerposter och för rader som väntar på bekräftelse.
+function openDialog({ title, values, canDelete, onSave }) {
   const dlg = $("#dlg-item");
   const form = $("#form-item");
   form.reset();
-  $("#dlg-item-title").textContent = item ? "Ändra" : "Lägg till";
-  $("#dlg-delete").hidden = !item;
-  const values = item ?? { zone: "frys", category: "övrigt", qty: 1, unit: "st" };
-  for (const k of ["name", "qty", "unit", "zone", "category", "bestBefore"]) form.elements[k].value = values[k] ?? "";
+  $("#dlg-item-title").textContent = title;
+  $("#dlg-delete").hidden = !canDelete;
+  for (const k of ITEM_FIELDS) form.elements[k].value = values[k] ?? "";
   dlg.onclose = run(async () => {
     if (dlg.returnValue === "cancel" || !dlg.returnValue) return;
     const fields = Object.fromEntries(new FormData(form));
     fields.qty = Number(fields.qty);
     if (!fields.bestBefore) fields.bestBefore = null;
-    let body;
-    if (dlg.returnValue === "delete") body = { action: "delete", id: item.id };
-    else if (item) body = { action: "update", id: item.id, fields };
-    else body = { action: "add", item: fields };
-    state.inventory = (await api("/api/inventory", { method: "POST", body })).inventory;
-    render();
+    await onSave(dlg.returnValue, fields);
   });
   dlg.showModal();
+}
+
+function openLineDialog(p, l) {
+  openDialog({
+    title: "Ändra och godkänn",
+    values: l,
+    canDelete: false,
+    onSave: (_, fields) => decide({ id: p.id, lineId: l.lineId, decision: "accept", edits: fields }),
+  });
+}
+
+function openItemDialog(item) {
+  openDialog({
+    title: item ? "Ändra" : "Lägg till",
+    values: item ?? { zone: "frys", category: "övrigt", qty: 1, unit: "st" },
+    canDelete: !!item,
+    onSave: (action, fields) => saveItem(item, action, fields),
+  });
+}
+
+async function saveItem(item, action, fields) {
+  let body;
+  if (action === "delete") body = { action: "delete", id: item.id };
+  else if (item) body = { action: "update", id: item.id, fields };
+  else body = { action: "add", item: fields };
+  state.inventory = (await api("/api/inventory", { method: "POST", body })).inventory;
+  render();
 }
 
 // ---- Att bekräfta ----
@@ -240,7 +264,7 @@ function lineRow(p, l) {
     h(
       "div",
       { class: "what" },
-      h("strong", {}, l.name),
+      h("button", { class: "line-name", onclick: () => openLineDialog(p, l), title: "Ändra" }, h("strong", {}, l.name), " ✎"),
       h("small", {},
         `${fmtQty(l.qty)} ${l.unit} · `,
         l.action === "add"

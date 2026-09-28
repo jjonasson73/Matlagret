@@ -24,7 +24,7 @@ const ReceiptLine = z.object({
   price: z.number().nullable().describe("Radsumma i kr efter ev. rabatt"),
   isFood: z.boolean(),
   confidence: Guess,
-  alternatives: z.array(z.string()).describe("Andra rimliga tolkningar av förkortningen, tom om säker"),
+  alternatives: z.array(z.string()).describe("Helt andra varor som förkortningen kan betyda, oftast tom"),
   note: z.string().nullable(),
 });
 
@@ -51,6 +51,15 @@ export const Photo = z.object({
   seen: z.array(PhotoItem),
 });
 
+// Märken som ofta står avkortade på ICA-kvitton.
+const BRANDS = [
+  "Arla", "Bregott", "Bravo", "Skånemejerier", "Valio", "Oatly", "Proviva", "Yoggi", "Kelda", "Philadelphia",
+  "Scan", "Findus", "Felix", "Garant", "ICA Basic", "ICA I love eco", "Änglamark", "Kungsörnen", "Zeta", "Barilla",
+  "Santa Maria", "Knorr", "Kavli", "Pågen", "Polarbröd", "Wasa", "Lantmännen", "Gevalia", "Zoégas", "Löfbergs",
+  "Marabou", "Cloetta", "OLW", "Estrella", "Heinz", "Johnny's", "Fontana", "Dafgårds", "Lithells",
+  "Sibylla", "Gårdsfisk", "Abba", "Fiskeby", "Norrmejerier", "Gott & Enkelt", "Uncle Ben's", "Risenta",
+];
+
 const RECEIPT_SYSTEM = `Du tolkar svenska matkvitton (oftast ICA via Kivra) till lagerposter för ett hushåll.
 
 Regler:
@@ -58,8 +67,13 @@ Regler:
 - Mängd kan vara i kg (viktvaror) eller styck. Använd det kvittot anger.
 - Pant, bärkassar, papper, tvättmedel, hygien och annat som inte är mat: isFood = false.
 - Tolka förkortningar till tydliga namn ("Creme fraich lätt" → "Crème fraiche lätt", "Norrloumi" → "Norrloumi grillost", "Majs förkokt vac" → "Majs förkokt vakuumpackad").
+- ICA kortar ofta varunamn och märken på kvittot. Skriv ut hela märkesnamnet: "Brav" → Bravo, "Brego" → Bregott, "Skånemejer" → Skånemejerier, "Kungsörn" → Kungsörnen, "Santa M" → Santa Maria, "Philad" → Philadelphia.
+- Vanliga svenska märken att känna igen: ${BRANDS.join(", ")}.
+- Frukt och grönt står ofta med sortnamn: "Aroma", "Pink Lady", "Ingrid Marie", "Granny Smith" är äpplen, "Conference" är päron, "Cherry" och "Piccolo" är tomater. Tolka inte sortnamn som märken eller drycker.
+- Viktvaror (kg) är nästan alltid frukt, grönt, kött, fisk eller ost – aldrig dryck.
 - confidence: "sure" bara när raden är entydig. Hellre "unsure" än en felaktig "likely" – användaren kontrollerar inte "likely".
-- Ange alternatives när en förkortning kan betyda flera varor.
+- alternatives: bara när förkortningen kan betyda helt olika varor ("Creme fraich" → crème fraiche eller gräddfil). Lista inte varianter av samma vara (fryst/torkad/på burk, olika fetthalter) och inte "Annan …". Hellre en tom lista än konstlade alternativ.
+- Är varan tydlig men förpackningen okänd, välj den vanligaste formen och sätt confidence "sure".
 - zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Mjöl, socker, salt, olja och liknande = basvara.
 
 Användarens egna regler (gäller alltid):

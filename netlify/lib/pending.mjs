@@ -37,7 +37,9 @@ export function applyLine(inv, articles, proposal, line, { individual }) {
         source: proposal.source,
         addedAt: proposal.meta?.date ?? undefined,
       });
-      if (line.articleNo) {
+      // Lär bara in rader som användaren har tittat på, eller som redan var säkra.
+      // Annars låser "Godkänn alla" fast felaktiga gissningar.
+      if (line.articleNo && (individual || line.confidence === "sure")) {
         articles[line.articleNo] = { name: line.name, category: line.category, zone: line.zone, unit: line.unit };
       }
       return item;

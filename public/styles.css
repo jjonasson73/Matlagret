@@ -88,6 +88,7 @@ ul.items, ul.lines { list-style: none; margin: 0; padding: 0; background: var(--
 .proposal menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 12px 0 0; }
 .proposal details { margin-top: 8px; }
 .proposal summary { color: var(--muted); padding: 6px 0; }
+.line-name { background: none; border: 0; padding: 0; text-align: left; color: inherit; }
 .line .what { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .action-probably_out strong { color: var(--unsure); }
 .action-skip strong { color: var(--muted); }
