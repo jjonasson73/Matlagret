@@ -1,0 +1,8 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  # sharp har inbyggda binärer och ska inte buntas.
+  external_node_modules = ["sharp"]

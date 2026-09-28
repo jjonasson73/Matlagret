@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6b4f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Matlagret">
+  <title>Matlagret</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Matlagret</h1>
+    <button id="btn-settings" class="icon" aria-label="Inställningar">⚙︎</button>
+  </header>
+
+  <main>
+    <section id="view-lager" class="view">
+      <div class="toolbar">
+        <button id="btn-add" class="primary">+ Lägg till</button>
+        <label class="toggle"><input type="checkbox" id="show-out"> Visa slut</label>
+      </div>
+      <div id="inventory"></div>
+    </section>
+
+    <section id="view-bekrafta" class="view" hidden>
+      <div class="inbox">
+        <label class="btn">📷 Fota
+          <input type="file" id="in-photo" accept="image/*" capture="environment" hidden>
+        </label>
+        <select id="photo-zone" aria-label="Zon för fotot">
+          <option value="">Zon: gissa</option>
+          <option value="kyl">Kyl</option>
+          <option value="frys">Frys</option>
+          <option value="skafferi">Skafferi</option>
+        </select>
+        <label class="btn">📄 Kvitto
+          <input type="file" id="in-file" accept="application/pdf,image/*,text/plain" hidden>
+        </label>
+        <button id="btn-paste" class="btn">📋 Klistra in</button>
+      </div>
+      <div id="pending"></div>
+    </section>
+
+    <section id="view-matplan" class="view" hidden>
+      <p class="empty">Matplanen kommer i steg 4.</p>
+    </section>
+
+    <section id="view-inkop" class="view" hidden>
+      <p class="empty">Inköpslistan kommer i steg 4.</p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-view="lager" class="active">Lager</button>
+    <button data-view="bekrafta">Att bekräfta <span id="badge" class="badge" hidden></span></button>
+    <button data-view="matplan">Matplan</button>
+    <button data-view="inkop">Inköp</button>
+  </nav>
+
+  <dialog id="dlg-item">
+    <form method="dialog" id="form-item">
+      <h2 id="dlg-item-title">Lägg till</h2>
+      <label>Namn <input name="name" required></label>
+      <div class="row">
+        <label>Mängd <input name="qty" type="number" step="any" value="1"></label>
+        <label>Enhet <input name="unit" value="st"></label>
+      </div>
+      <div class="row">
+        <label>Zon
+          <select name="zone">
+            <option value="kyl">Kyl</option>
+            <option value="frys">Frys</option>
+            <option value="skafferi">Skafferi</option>
+            <option value="basvara">Basvara</option>
+          </select>
+        </label>
+        <label>Kategori
+          <select name="category">
+            <option>protein</option><option>grönsak</option><option>mejeri</option>
+            <option>torrvara</option><option>krydda</option><option>snacks</option>
+            <option>dryck</option><option selected>övrigt</option>
+          </select>
+        </label>
+      </div>
+      <label>Bäst före <input name="bestBefore" type="date"></label>
+      <menu>
+        <button value="delete" id="dlg-delete" class="danger" hidden>Ta bort</button>
+        <button value="cancel" formnovalidate>Avbryt</button>
+        <button value="save" class="primary">Spara</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-paste">
+    <form method="dialog">
+      <h2>Klistra in kvittotext</h2>
+      <textarea name="text" rows="10"></textarea>
+      <menu>
+        <button value="cancel" formnovalidate>Avbryt</button>
+        <button value="send" class="primary">Skicka</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-settings">
+    <form method="dialog">
+      <h2>Inställningar</h2>
+      <label>API-nyckel (INGEST_KEY) <input name="key" type="password" autocomplete="off"></label>
+      <menu>
+        <button value="cancel" formnovalidate>Avbryt</button>
+        <button value="save" class="primary">Spara</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <div id="toast" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
