@@ -56,6 +56,20 @@ test("ingest tar emot multipart-fil från genvägen", async () => {
   assert.equal(list.pending.at(-1).status, "queued");
 });
 
+test("ingest känner igen PDF skickad som rå fil utan content-type", async () => {
+  const res = await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: Buffer.from("%PDF-1.7 ...") }));
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).kind, "pdf");
+});
+
+test("ingest säger till när genvägen bara skickar filnamnet", async () => {
+  const form = new FormData();
+  form.append("file", "Kvitto_ICA_2026-08-27.pdf");
+  const res = await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }));
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /filnamnet/);
+});
+
 test("kvittorader: användarregler, icke-mat och artikelkoppling", () => {
   const lines = receiptLines(receipt, { 456: { name: "Crème fraiche lätt", category: "mejeri", zone: "kyl", unit: "st" } });
   assert.equal(lines[0].zone, "frys", "köttfärs fryses direkt");
