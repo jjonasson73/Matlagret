@@ -1,0 +1,10 @@
+{
+  "name": "Matlagret",
+  "short_name": "Matlagret",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#2f6b4f",
+  "lang": "sv",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
