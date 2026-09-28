@@ -9,6 +9,20 @@ import { ZONES } from "../lib/rules.mjs";
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
+// Känn igen filen på innehållet först – genvägen skickar inte alltid rätt typ.
+export function sniff(data) {
+  const head = data.subarray(0, 12);
+  if (head.subarray(0, 5).toString("latin1") === "%PDF-") return "application/pdf";
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  if (head.subarray(0, 4).toString("hex") === "89504e47") return "image/png";
+  if (head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (head.subarray(4, 8).toString("latin1") === "ftyp") return "image/heic";
+  return null;
+}
+
+// Genvägen kan råka skicka filens namn i stället för filen (variabelegenskapen "Namn").
+const looksLikeFilename = (text) => text.length < 200 && !text.includes("\n") && /\.(pdf|jpe?g|png|heic|webp)$/i.test(text.trim());
+
 function detectKind(type, name = "") {
   if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
   if (type?.startsWith("image/") || /\.(jpe?g|png|heic|webp)$/i.test(name)) return "image";
@@ -42,6 +56,13 @@ export default async (req, context) => {
 
   const upload = await readUpload(req);
   if (!upload) return error("Ingen fil eller text i anropet (fältnamn: file)");
+  upload.mediaType = sniff(upload.data) ?? upload.mediaType;
+  if (upload.mediaType === "text/plain" && looksLikeFilename(upload.data.toString("utf8"))) {
+    return error(
+      `Fick bara filnamnet "${upload.data.toString("utf8").trim()}", inte själva filen. ` +
+        "I genvägen ska fältet file vara Upprepa objekt utan vald egenskap, eller skicka begäran som Fil.",
+    );
+  }
   if (upload.data.length > MAX_BYTES) return error("Filen är för stor", 413);
   const kind = detectKind(upload.mediaType, upload.filename);
   if (!kind) return error(`Okänd filtyp: ${upload.mediaType}`, 415);

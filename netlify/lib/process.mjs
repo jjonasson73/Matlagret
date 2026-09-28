@@ -112,6 +112,9 @@ export async function processJob(id) {
     } else if (kind === "image") {
       const inventory = await loadInventory();
       const img = await shrinkImage(upload.data, mediaType);
+      if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(img.mediaType)) {
+        throw new Error("Bildformatet stöds inte (troligen HEIC). Lägg till \"Konvertera bild\" till JPEG i genvägen.");
+      }
       const photo = await parsePhoto(img.data, img.mediaType, { zone, inventory: inventory.items });
       if (zone) photo.zone = zone;
       source = "photo";
