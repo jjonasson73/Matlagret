@@ -83,14 +83,19 @@ function knownArticles(articles) {
 }
 
 async function parse({ system, content, schema }) {
-  const res = await anthropic().messages.parse({
+  // Streaming så att ett stort max_tokens inte slår i HTTP-timeouten. Tänkandet
+  // och JSON för ett långt kvitto (~60 rader) delar på samma budget.
+  // effort "medium": det är extrahering, inte svår problemlösning.
+  const stream = anthropic().messages.stream({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 64000,
     thinking: { type: "adaptive" },
     system,
     messages: [{ role: "user", content }],
-    output_config: { format: zodOutputFormat(schema) },
+    output_config: { effort: "medium", format: zodOutputFormat(schema) },
   });
+  const res = await stream.finalMessage();
+  console.log("Claude usage", JSON.stringify(res.usage));
   if (res.stop_reason === "refusal") throw new Error("Claude avböjde att tolka underlaget");
   if (res.stop_reason === "max_tokens") throw new Error("Svaret blev för långt (max_tokens)");
   if (!res.parsed_output) throw new Error("Kunde inte tolka svaret från Claude");
