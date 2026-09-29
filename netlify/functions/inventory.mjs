@@ -4,11 +4,14 @@
 //   { action: "confirm", id }      användaren bekräftar posten
 //   { action: "out", id }          slut
 //   { action: "update", id, fields }
+//   { action: "open", id, remaining }   öppnad förpackning: 1 | 0.75 | 0.5 | 0.25, null = oöppnad
 //   { action: "delete", id }
+//   { action: "tagAll" }            tagga poster som saknar role (bakgrund)
 import { store, KEYS } from "../lib/store.mjs";
 import { json, error, checkKey } from "../lib/http.mjs";
-import { loadInventory, saveInventory, addOrMerge, findItem, updateItem } from "../lib/inventory.mjs";
-import { CATEGORIES, ZONES } from "../lib/rules.mjs";
+import { loadInventory, saveInventory, addOrMerge, findItem, updateItem, setOpened } from "../lib/inventory.mjs";
+import { CATEGORIES, ZONES, articleFields } from "../lib/rules.mjs";
+import { triggerBackground } from "../lib/process.mjs";
 
 export default async (req) => {
   const denied = checkKey(req);
@@ -20,6 +23,14 @@ export default async (req) => {
   const body = await req.json().catch(() => null);
   if (!body?.action) return error("action saknas");
   const inv = await loadInventory();
+
+  if (body.action === "tagAll") {
+    const untagged = inv.items.filter((i) => i.status !== "out" && !i.role).length;
+    if (!untagged) return json({ ok: true, untagged: 0 });
+    const problem = await triggerBackground(req, "tag-background", {});
+    if (problem) return error(`Taggningen startade inte (${problem})`, 502);
+    return json({ ok: true, untagged });
+  }
 
   if (body.action === "add") {
     const it = body.item ?? {};
@@ -49,11 +60,18 @@ export default async (req) => {
       // Rättningen gäller även nästa kvitto med samma artikelnummer.
       if (item.articleNo) {
         const articles = (await store.get(KEYS.articles)) ?? {};
-        articles[item.articleNo] = { name: item.name, category: item.category, zone: item.zone, unit: item.unit };
+        articles[item.articleNo] = articleFields(item);
         await store.put(KEYS.articles, articles);
       }
       break;
     }
+    case "open":
+      try {
+        setOpened(item, body.remaining);
+      } catch (e) {
+        return error(e.message);
+      }
+      break;
     case "delete":
       inv.items = inv.items.filter((i) => i.id !== item.id);
       break;

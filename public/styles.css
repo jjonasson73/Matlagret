@@ -24,6 +24,8 @@
   }
 }
 * { box-sizing: border-box; }
+/* hidden-attributet ska alltid vinna över display: flex i komponentreglerna. */
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -129,3 +131,12 @@ dialog menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; ma
 .scan menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 12px 0 0; flex-wrap: wrap; }
 .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
 .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+
+.quick.open { font-size: 20px; line-height: 1; color: var(--muted); }
+dialog fieldset.styles { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 10px; padding: 6px 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+dialog fieldset.styles legend { font-size: 14px; color: var(--muted); padding: 0 4px; }
+dialog fieldset.styles label, dialog label.check { flex-direction: row; align-items: center; gap: 6px; margin: 0; flex: none; color: var(--text); }
+dialog fieldset.styles input, dialog label.check input { width: auto; }
+dialog label.check { margin-bottom: 10px; }
+dialog menu.choices button { flex: 1; justify-content: center; font-size: 18px; }
+dialog .hint { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }

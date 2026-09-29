@@ -2,7 +2,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { CATEGORIES, ZONES, USER_RULES } from "./rules.mjs";
+import { CATEGORIES, ZONES, USER_RULES, STYLES, ROLES } from "./rules.mjs";
 
 export const MODEL = "claude-sonnet-4-6";
 
@@ -12,6 +12,17 @@ const anthropic = () => (client ??= new Anthropic());
 const Category = z.enum(CATEGORIES);
 const Zone = z.enum(ZONES);
 const Guess = z.enum(["sure", "likely", "unsure"]);
+
+// Taggar för matplan och inköpslista (SPEC-matplan.md, steg 0).
+const Tags = {
+  styles: z.array(z.enum(STYLES)).describe("Köksstilar varan passar i, tom om den är neutral"),
+  role: z.enum(ROLES),
+  kind: z.string().describe("Generisk varutyp i singular, gemener: 'pasta', 'bröd', 'socker', 'crème fraiche'"),
+};
+const PackageSize = z
+  .object({ qty: z.number(), unit: z.string() })
+  .nullable()
+  .describe("En förpacknings innehåll, t.ex. { qty: 500, unit: 'g' }, om det går att utläsa");
 
 const ReceiptLine = z.object({
   raw: z.string().describe("Raden exakt som den står på kvittot"),
@@ -26,6 +37,8 @@ const ReceiptLine = z.object({
   confidence: Guess,
   alternatives: z.array(z.string()).describe("Helt andra varor som förkortningen kan betyda, oftast tom"),
   note: z.string().nullable(),
+  ...Tags,
+  packageSize: PackageSize,
 });
 
 export const Receipt = z.object({
@@ -44,6 +57,11 @@ const PhotoItem = z.object({
   confidence: Guess,
   bestBefore: z.string().nullable().describe("YYYY-MM-DD om det går att läsa"),
   alternatives: z.array(z.string()),
+  ...Tags,
+});
+
+export const Tagging = z.object({
+  items: z.array(z.object({ id: z.string(), ...Tags })),
 });
 
 export const Photo = z.object({
@@ -59,6 +77,11 @@ const BRANDS = [
   "Marabou", "Cloetta", "OLW", "Estrella", "Heinz", "Johnny's", "Fontana", "Dafgårds", "Lithells",
   "Sibylla", "Gårdsfisk", "Abba", "Fiskeby", "Norrmejerier", "Gott & Enkelt", "Uncle Ben's", "Risenta",
 ];
+
+const TAG_RULES = `Taggar för matplanering:
+- styles: vilka köksstilar varan är typisk för (${STYLES.join(", ")}). Tom lista för neutrala varor som mjölk eller lök. Flera går bra: riven ost passar både italienskt och mexikanskt.
+- role: varans roll i en måltid. protein (kött, fisk, ägg, bönor, tofu), kolhydrat (pasta, ris, potatis, bröd, tortillas), grönsak (även frukt och bär), mejeri, smaksättning (såser, kryddor, buljong, pesto), dessert (sötsaker, glass, bakning), övrigt.
+- kind: generisk varutyp i singular och gemener, så att olika sorter av samma sak får samma kind ("Spirali" och "Spaghetti" → "pasta", "Pärlsocker" → "socker", "Levain" → "bröd").`;
 
 const RECEIPT_SYSTEM = `Du tolkar svenska matkvitton (oftast ICA via Kivra) till lagerposter för ett hushåll.
 
@@ -76,6 +99,9 @@ Regler:
 - Är varan tydlig men förpackningen okänd, välj den vanligaste formen och sätt confidence "sure".
 - zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Torra kryddor och kryddblandningar = kryddor (färska örter = kyl). Mjöl, socker, salt, olja och liknande = basvara.
 
+${TAG_RULES}
+- packageSize: en förpacknings innehåll när det står på raden eller är känt för varan ("Nötfärs 500g" → 500 g, "Mellanmjölk 1,5l" → 1.5 l), annars null.
+
 Användarens egna regler (gäller alltid):
 ${USER_RULES.map((r) => "- " + r).join("\n")}`;
 
@@ -86,7 +112,13 @@ const PHOTO_SYSTEM = `Du stämmer av ett eller flera foton av en förvaringsplat
 - Om en vara motsvarar en post i lagerlistan: sätt inventoryId till postens id.
 - Om varan inte finns i lagret: inventoryId = null och confidence högst "likely". Omärkta hemmafrysta påsar är alltid "unsure".
 - Läs bäst före-datum när de syns tydligt.
-- Hellre "unsure" än en felaktig "likely".`;
+- Hellre "unsure" än en felaktig "likely".
+
+${TAG_RULES}`;
+
+const TAG_SYSTEM = `Du sätter taggar på lagerposter i ett hushålls matlager, för matplanering och inköpslista. Returnera en post per id, i samma ordning.
+
+${TAG_RULES}`;
 
 function knownArticles(articles) {
   const entries = Object.entries(articles ?? {});
@@ -160,5 +192,15 @@ export function parsePhoto(images, { zone, inventory }) {
           `\n\nLagret just nu:\n${list || "(tomt)"}`,
       },
     ],
+  });
+}
+
+// Engångstaggning av befintligt lager (poster utan role).
+export function tagItems(items) {
+  const list = items.map((i) => `${i.id}: ${i.name} (${i.category}, ${i.zone})`).join("\n");
+  return parse({
+    system: TAG_SYSTEM,
+    schema: Tagging,
+    content: [{ type: "text", text: `Tagga de här lagerposterna:\n\n${list}` }],
   });
 }

@@ -102,11 +102,46 @@
           </select>
         </label>
       </div>
+      <div class="row">
+        <label>Typ <input name="kind" placeholder="t.ex. pasta"></label>
+        <label>Roll
+          <select name="role">
+            <option value="">–</option>
+            <option>protein</option><option>kolhydrat</option><option>grönsak</option>
+            <option>mejeri</option><option>smaksättning</option><option>dessert</option><option>övrigt</option>
+          </select>
+        </label>
+      </div>
+      <fieldset class="styles">
+        <legend>Stil</legend>
+        <label><input type="checkbox" name="styles" value="asiatiskt"> asiatiskt</label>
+        <label><input type="checkbox" name="styles" value="italienskt"> italienskt</label>
+        <label><input type="checkbox" name="styles" value="mexikanskt"> mexikanskt</label>
+        <label><input type="checkbox" name="styles" value="husman"> husman</label>
+        <label><input type="checkbox" name="styles" value="dessert"> dessert</label>
+      </fieldset>
       <label>Bäst före <input name="bestBefore" type="date"></label>
+      <label class="check" id="leftover-row" hidden><input type="checkbox" name="leftover"> Rester – hamnar i kylen och håller 3 dagar</label>
       <menu>
         <button value="delete" id="dlg-delete" class="danger" hidden>Ta bort</button>
         <button value="cancel" formnovalidate>Avbryt</button>
         <button value="save" class="primary">Spara</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-open">
+    <form method="dialog">
+      <h2 id="dlg-open-title">Hur mycket är kvar?</h2>
+      <menu class="choices">
+        <button value="1">Full</button>
+        <button value="0.75">¾</button>
+        <button value="0.5">½</button>
+        <button value="0.25">¼</button>
+      </menu>
+      <menu>
+        <button value="none">Inte öppnad</button>
+        <button value="cancel" class="primary">Avbryt</button>
       </menu>
     </form>
   </dialog>
@@ -126,6 +161,8 @@
     <form method="dialog">
       <h2>Inställningar</h2>
       <label>API-nyckel (INGEST_KEY) <input name="key" type="password" autocomplete="off"></label>
+      <p class="hint">Varor från före stiltaggarna saknar stil, roll och typ. Claude kan tagga dem i ett svep.</p>
+      <button type="button" id="btn-tag" class="btn">🏷 Tagga befintligt lager</button>
       <menu>
         <button value="cancel" formnovalidate>Avbryt</button>
         <button value="save" class="primary">Spara</button>
