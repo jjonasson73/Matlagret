@@ -192,7 +192,7 @@ function renderPending() {
 function proposalCard(p) {
   const title =
     p.source === "photo"
-      ? `Foto · ${p.meta?.zone ?? ""}`
+      ? `${p.meta?.photos > 1 ? `Skanning (${p.meta.photos} foton)` : "Foto"} · ${p.meta?.zone ?? ""}${p.meta?.scope === "full" ? " · hela zonen" : ""}`
       : p.meta?.store
         ? `${p.meta.store}${p.meta.date ? " · " + p.meta.date : ""}`
         : p.filename;
@@ -238,9 +238,11 @@ function proposalCard(p) {
     );
   }
   if (done.length) card.append(h("p", { class: "muted" }, `${done.length} rader klara`));
+  const outs = open.filter((l) => l.action === "probably_out").length;
   card.append(
     h("menu", {},
       h("button", { onclick: run(() => decide({ id: p.id, dismiss: true })) }, "Släng allt"),
+      outs ? h("button", { onclick: run(() => decide({ id: p.id, rejectAction: "probably_out" })) }, `Inget är slut (${outs})`) : null,
       open.length ? h("button", { class: "primary", onclick: run(() => decide({ id: p.id, acceptAll: true })) }, `Godkänn alla ${open.length}`) : null,
     ),
   );
@@ -307,6 +309,53 @@ $("#in-photo").addEventListener("change", run(async (e) => {
   const zone = $("#photo-zone").value;
   if (zone) form.append("zone", zone);
   e.target.value = "";
+  await send(form);
+}));
+
+// ---- Skanna hela zonen: flera foton, ett förslag ----
+
+const MAX_SCAN = 8;
+const scan = { photos: [], zone: null };
+
+function renderScan() {
+  $("#scan").hidden = !scan.zone;
+  $("#scan-title").textContent = `Skanna hela ${scan.zone ?? ""}`;
+  $("#scan-thumbs").replaceChildren(...scan.photos.map((b) => h("img", { src: URL.createObjectURL(b), alt: "" })));
+  $("#scan-done").disabled = !scan.photos.length;
+  $("#scan-done").textContent = `Klar – skicka ${scan.photos.length} foton`;
+}
+
+function resetScan() {
+  scan.photos = [];
+  scan.zone = null;
+  renderScan();
+}
+
+$("#btn-scan").addEventListener("click", () => {
+  const zone = $("#photo-zone").value;
+  if (!zone) return toast("Välj zon först: kyl, frys eller skafferi");
+  scan.zone = zone;
+  scan.photos = [];
+  renderScan();
+});
+
+$("#scan-photo").addEventListener("change", run(async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (scan.photos.length >= MAX_SCAN) return toast(`Högst ${MAX_SCAN} foton`);
+  scan.photos.push(await shrink(file));
+  renderScan();
+}));
+
+$("#scan-cancel").addEventListener("click", resetScan);
+
+$("#scan-done").addEventListener("click", run(async () => {
+  const form = new FormData();
+  scan.photos.forEach((b, i) => form.append("file", b, `skanning${i + 1}.jpg`));
+  form.append("zone", scan.zone);
+  form.append("scope", "full");
+  resetScan();
   await send(form);
 }));
 

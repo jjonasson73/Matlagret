@@ -48,7 +48,9 @@ export function receiptLines(receipt, articles) {
   });
 }
 
-export function photoLines(photo, inventory) {
+// scope "part": bara det som syns räknas. "full": hela zonen är fotad, så det som
+// inte syns i någon bild föreslås som troligen slut.
+export function photoLines(photo, inventory, { scope = "part" } = {}) {
   const zoneItems = inventory.items.filter((i) => i.zone === photo.zone && i.status === "active");
   const seenIds = new Set();
   const lines = photo.seen.map((s, i) => {
@@ -69,6 +71,7 @@ export function photoLines(photo, inventory) {
       decision: null,
     };
   });
+  if (scope !== "full") return lines;
   // Finns i lagret men syns inte → föreslå probably_out, ta aldrig bort.
   for (const item of zoneItems) {
     if (seenIds.has(item.id)) continue;
@@ -98,7 +101,7 @@ export async function processJob(id) {
   try {
     const upload = await uploads.getBinary(id);
     if (!upload) throw new Error("Uppladdningen saknas");
-    const { kind, mediaType, zone } = upload.metadata;
+    const { kind, mediaType, zone, scope = "part", count = 1 } = upload.metadata;
     const articles = (await store.get(KEYS.articles)) ?? {};
 
     let meta, lines, source;
@@ -112,15 +115,24 @@ export async function processJob(id) {
       lines = receiptLines(receipt, articles);
     } else if (kind === "image") {
       const inventory = await loadInventory();
-      const img = await shrinkImage(upload.data, mediaType);
-      if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(img.mediaType)) {
-        throw new Error("Bildformatet stöds inte (troligen HEIC). Lägg till \"Konvertera bild\" till JPEG i genvägen.");
+      const raw = [{ data: upload.data, mediaType }];
+      for (let i = 1; i < count; i++) {
+        const part = await uploads.getBinary(`${id}.${i}`);
+        if (part) raw.push({ data: part.data, mediaType: part.metadata.mediaType });
       }
-      const photo = await parsePhoto(img.data, img.mediaType, { zone, inventory: inventory.items });
+      const images = [];
+      for (const r of raw) {
+        const img = await shrinkImage(r.data, r.mediaType);
+        if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(img.mediaType)) {
+          throw new Error("Bildformatet stöds inte (troligen HEIC). Lägg till \"Konvertera bild\" till JPEG i genvägen.");
+        }
+        images.push(img);
+      }
+      const photo = await parsePhoto(images, { zone, inventory: inventory.items });
       if (zone) photo.zone = zone;
       source = "photo";
-      meta = { zone: photo.zone };
-      lines = photoLines(photo, inventory);
+      meta = { zone: photo.zone, scope, photos: images.length };
+      lines = photoLines(photo, inventory, { scope });
     } else {
       throw new Error(`Okänd typ: ${kind}`);
     }

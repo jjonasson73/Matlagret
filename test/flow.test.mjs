@@ -123,18 +123,56 @@ test("inlärning: godkänn alla lär bara in säkra rader, rättning i lagret l�
   assert.equal(articles["777"].name, "Äpple Aroma");
 });
 
-test("fotoavstämning: syns → bekräfta, syns inte → troligen slut", () => {
+test("fotoavstämning: del av zonen föreslår aldrig slut, hela zonen gör det", () => {
   const inv = { items: [makeItem({ name: "Mjölk", zone: "kyl", category: "mejeri" }), makeItem({ name: "Smör", zone: "kyl", category: "mejeri" })] };
   const [milk] = inv.items;
-  const lines = photoLines(
-    { zone: "kyl", seen: [
-      { inventoryId: milk.id, name: "Mjölk", category: "mejeri", qty: 1, unit: "st", confidence: "sure", bestBefore: "2026-10-01", alternatives: [] },
-      { inventoryId: null, name: "Halloumi", category: "mejeri", qty: 1, unit: "st", confidence: "sure", bestBefore: null, alternatives: [] },
-    ] },
-    inv,
-  );
-  assert.deepEqual(lines.map((l) => l.action), ["confirm", "add", "probably_out"]);
-  assert.equal(lines[1].confidence, "likely", "nytt från foto blir aldrig sure");
+  const photo = { zone: "kyl", seen: [
+    { inventoryId: milk.id, name: "Mjölk", category: "mejeri", qty: 1, unit: "st", confidence: "sure", bestBefore: "2026-10-01", alternatives: [] },
+    { inventoryId: null, name: "Halloumi", category: "mejeri", qty: 1, unit: "st", confidence: "sure", bestBefore: null, alternatives: [] },
+  ] };
+  const part = photoLines(photo, inv);
+  assert.deepEqual(part.map((l) => l.action), ["confirm", "add"], "ett foto av kyldörren tar inte bort resten");
+  assert.equal(part[1].confidence, "likely", "nytt från foto blir aldrig sure");
+
+  const full = photoLines(photo, inv, { scope: "full" });
+  assert.deepEqual(full.map((l) => l.action), ["confirm", "add", "probably_out"]);
+});
+
+test("skanning: flera foton i ett anrop blir ett förslag", async () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const form = new FormData();
+  for (let i = 0; i < 3; i++) form.append("file", new Blob([jpeg], { type: "image/jpeg" }), `foto${i}.jpg`);
+  form.append("zone", "kyl");
+  form.append("scope", "full");
+  const res = await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }));
+  assert.equal(res.status, 200);
+  const { id } = await res.json();
+  const { uploads } = await import("../netlify/lib/store.mjs");
+  const main = await uploads.getBinary(id);
+  assert.equal(main.metadata.count, 3);
+  assert.equal(main.metadata.scope, "full");
+  assert.ok(await uploads.getBinary(`${id}.2`), "tredje fotot sparat");
+});
+
+test("skanning: PDF och foto kan inte blandas", async () => {
+  const form = new FormData();
+  form.append("file", new Blob(["%PDF-1.4"], { type: "application/pdf" }), "k.pdf");
+  form.append("file", new Blob([Buffer.from([0xff, 0xd8, 0xff])], { type: "image/jpeg" }), "f.jpg");
+  const res = await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }));
+  assert.equal(res.status, 400);
+});
+
+test("avvisa alla troligen slut på en gång", async () => {
+  const { makeItem: mk, saveInventory } = await import("../netlify/lib/inventory.mjs");
+  const smor = mk({ name: "Smör", zone: "kyl", category: "mejeri" });
+  await saveInventory({ items: [smor] });
+  const form = new FormData();
+  form.append("text", "x");
+  const { id } = await (await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }))).json();
+  await updateProposal(id, (p) => Object.assign(p, { status: "ready", source: "photo", meta: {}, lines: photoLines({ zone: "kyl", seen: [] }, { items: [smor] }, { scope: "full" }) }));
+  const body = await (await pending(post("/api/pending", { id, rejectAction: "probably_out" }))).json();
+  assert.equal(body.proposal.status, "done");
+  assert.equal(body.inventory.items[0].status, "active", "smöret finns kvar");
 });
 
 test("manuell frysregistrering och snabbknappar", async () => {

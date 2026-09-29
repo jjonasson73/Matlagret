@@ -122,3 +122,10 @@ dialog menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; ma
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 3;
   max-width: 90vw;
 }
+
+.scan { background: var(--card); border: 2px dashed var(--accent); border-radius: 14px; padding: 12px; margin-bottom: 16px; }
+.scan p { margin: 0 0 8px; }
+.scan small { color: var(--muted); }
+.scan menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 12px 0 0; flex-wrap: wrap; }
+.thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
