@@ -2,6 +2,7 @@
 // POST /api/pending – besluta om förslag:
 //   { id, lineId, decision: "accept" | "reject", edits?: { name, zone, qty, ... } }
 //   { id, acceptAll: true }   godkänn alla obeslutade rader
+//   { id, rejectAction: "probably_out" }   avvisa alla obeslutade rader av en typ
 //   { id, dismiss: true }     släng hela förslaget
 //   { id, retry: true }       tolka om (efter fel)
 import { store, KEYS } from "../lib/store.mjs";
@@ -53,7 +54,11 @@ export default async (req) => {
   const inv = await loadInventory();
   const articles = (await store.get(KEYS.articles)) ?? {};
 
-  if (body.acceptAll) {
+  if (body.rejectAction) {
+    for (const line of p.lines) {
+      if (line.action === body.rejectAction && !line.decision) line.decision = "rejected";
+    }
+  } else if (body.acceptAll) {
     for (const line of p.lines) {
       if (line.action === "skip" || line.decision) continue;
       applyLine(inv, articles, p, line, { individual: false });

@@ -79,9 +79,10 @@ Regler:
 Användarens egna regler (gäller alltid):
 ${USER_RULES.map((r) => "- " + r).join("\n")}`;
 
-const PHOTO_SYSTEM = `Du stämmer av ett foto av en förvaringsplats (kyl, frys eller skafferi) mot hushållets lager.
+const PHOTO_SYSTEM = `Du stämmer av ett eller flera foton av en förvaringsplats (kyl, frys eller skafferi) mot hushållets lager.
 
-- Lista allt du ser i bilden som är mat, i fältet seen.
+- Flera foton visar olika delar av samma zon (hyllor, dörr, lådor). Samma vara kan synas i flera bilder – räkna den bara en gång.
+- Lista allt du ser som är mat, i fältet seen.
 - Om en vara motsvarar en post i lagerlistan: sätt inventoryId till postens id.
 - Om varan inte finns i lagret: inventoryId = null och confidence högst "likely". Omärkta hemmafrysta påsar är alltid "unsure".
 - Läs bäst före-datum när de syns tydligt.
@@ -138,7 +139,7 @@ export function parseReceiptText(text, { articles } = {}) {
   });
 }
 
-export function parsePhoto(image, mediaType, { zone, inventory }) {
+export function parsePhoto(images, { zone, inventory }) {
   const list = inventory
     .filter((i) => i.status !== "out" && (!zone || i.zone === zone))
     .map((i) => `${i.id}: ${i.name}, ${i.qty} ${i.unit} (${i.zone})`)
@@ -147,11 +148,15 @@ export function parsePhoto(image, mediaType, { zone, inventory }) {
     system: PHOTO_SYSTEM,
     schema: Photo,
     content: [
-      { type: "image", source: { type: "base64", media_type: mediaType, data: Buffer.from(image).toString("base64") } },
+      ...images.map((img) => ({
+        type: "image",
+        source: { type: "base64", media_type: img.mediaType, data: Buffer.from(img.data).toString("base64") },
+      })),
       {
         type: "text",
         text:
-          (zone ? `Bilden visar zonen: ${zone}.` : "Gissa vilken zon bilden visar.") +
+          (images.length > 1 ? `${images.length} foton av samma zon. ` : "") +
+          (zone ? `Zonen är: ${zone}.` : "Gissa vilken zon bilderna visar.") +
           `\n\nLagret just nu:\n${list || "(tomt)"}`,
       },
     ],

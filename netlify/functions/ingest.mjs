@@ -1,5 +1,8 @@
 // POST /api/ingest – inkorgen. Tar emot PDF, bild eller text (multipart, fält "file"
-// eller "text", valfritt "zone"), sparar råfilen och lägger ett förslag i kön.
+// eller "text", valfritt "zone" och "scope"), sparar råfilen och lägger ett förslag i kön.
+// Flera "file" med bilder = en skanning av zonen (upp till MAX_PHOTOS foton).
+// scope: "part" (standard) = bara det som syns räknas, "full" = det som inte syns
+// föreslås som troligen slut.
 // Själva tolkningen sker i process-background så att svaret kommer direkt.
 import { uploads } from "../lib/store.mjs";
 import { json, error, checkKey, newId } from "../lib/http.mjs";
@@ -8,6 +11,8 @@ import { processJob, startBackground } from "../lib/process.mjs";
 import { ZONES } from "../lib/rules.mjs";
 
 const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_PHOTOS = 8;
+const SCOPES = ["part", "full"];
 
 // Känn igen filen på innehållet först – genvägen skickar inte alltid rätt typ.
 export function sniff(data) {
@@ -35,18 +40,25 @@ async function readUpload(req) {
   if (ct.startsWith("multipart/form-data") || ct.startsWith("application/x-www-form-urlencoded")) {
     const form = await req.formData();
     const zone = form.get("zone") || null;
-    const file = form.get("file");
+    const scope = form.get("scope") || "part";
+    const [file, ...more] = form.getAll("file");
     if (file && typeof file === "object") {
       const data = Buffer.from(await file.arrayBuffer());
-      return { data, mediaType: file.type || "application/octet-stream", filename: file.name || "fil", zone };
+      const extra = [];
+      for (const f of more) {
+        if (typeof f !== "object") continue;
+        const d = Buffer.from(await f.arrayBuffer());
+        extra.push({ data: d, mediaType: sniff(d) ?? f.type });
+      }
+      return { data, mediaType: file.type || "application/octet-stream", filename: file.name || "fil", zone, scope, extra };
     }
     const text = form.get("text") ?? (typeof file === "string" ? file : null);
-    if (text) return { data: Buffer.from(text), mediaType: "text/plain", filename: "kvitto.txt", zone };
+    if (text) return { data: Buffer.from(text), mediaType: "text/plain", filename: "kvitto.txt", zone, scope, extra: [] };
     return null;
   }
   const data = Buffer.from(await req.arrayBuffer());
   if (!data.length) return null;
-  return { data, mediaType: ct.split(";")[0] || "text/plain", filename: "fil", zone: null };
+  return { data, mediaType: ct.split(";")[0] || "text/plain", filename: "fil", zone: null, scope: "part", extra: [] };
 }
 
 export default async (req, context) => {
@@ -67,6 +79,13 @@ export default async (req, context) => {
   const kind = detectKind(upload.mediaType, upload.filename);
   if (!kind) return error(`Okänd filtyp: ${upload.mediaType}`, 415);
   if (upload.zone && !ZONES.includes(upload.zone)) return error(`Okänd zon: ${upload.zone}`);
+  if (!SCOPES.includes(upload.scope)) return error(`Okänt scope: ${upload.scope}`);
+  if (upload.extra.length) {
+    if (kind !== "image" || upload.extra.some((f) => !f.mediaType?.startsWith("image/"))) {
+      return error("Flera filer i samma anrop går bara för foton");
+    }
+    if (upload.extra.length + 1 > MAX_PHOTOS) return error(`Högst ${MAX_PHOTOS} foton per skanning`);
+  }
 
   const id = newId();
   await uploads.putBinary(id, upload.data, {
@@ -74,7 +93,12 @@ export default async (req, context) => {
     mediaType: upload.mediaType,
     filename: upload.filename,
     zone: upload.zone,
+    scope: upload.scope,
+    count: upload.extra.length + 1,
   });
+  for (const [i, f] of upload.extra.entries()) {
+    await uploads.putBinary(`${id}.${i + 1}`, f.data, { mediaType: f.mediaType });
+  }
 
   const pending = await loadPending();
   pending.push({
