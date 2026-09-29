@@ -203,6 +203,53 @@ test("kryddor: torra kryddor får egen zon, befintliga flyttas en gång", async 
   assert.equal(inv.items[0].zone, "skafferi");
 });
 
+test("steg 0: öppnad förpackning, rester och stiltaggar", async () => {
+  const { setOpened, updateItem } = await import("../netlify/lib/inventory.mjs");
+  const pasta = makeItem({ name: "Spirali", category: "torrvara", zone: "skafferi", styles: "Italienskt, okänd", role: "kolhydrat", kind: "pasta" });
+  assert.deepEqual(pasta.styles, ["italienskt"], "stil från kommatext, okända filtreras bort");
+  assert.equal(pasta.opened, false);
+  setOpened(pasta, 0.5);
+  assert.deepEqual([pasta.opened, pasta.remaining], [true, 0.5]);
+  assert.throws(() => setOpened(pasta, 0.3));
+  setOpened(pasta, null);
+  assert.equal(pasta.opened, false);
+  updateItem(pasta, { role: "påhittad" });
+  assert.equal(pasta.role, null, "okänd roll avvisas");
+
+  const rester = makeItem({ name: "Chili con carne", source: "leftover" });
+  assert.deepEqual([rester.zone, rester.perishDays], ["kyl", 3]);
+  const frystaRester = makeItem({ name: "Chili con carne", source: "leftover", zone: "frys" });
+  assert.equal(frystaRester.perishDays, null, "infrysta rester åldras inte");
+
+  let body = await (await inventory(post("/api/inventory", { action: "add", item: { name: "Lasagne", source: "leftover", zone: "kyl" } }))).json();
+  body = await (await inventory(post("/api/inventory", { action: "open", id: body.item.id, remaining: 0.25 }))).json();
+  assert.equal(body.inventory.items.find((i) => i.name === "Lasagne").remaining, 0.25);
+  const bad = await inventory(post("/api/inventory", { action: "open", id: body.inventory.items[0].id, remaining: 2 }));
+  assert.equal(bad.status, 400);
+});
+
+test("steg 0: taggar följer med från kvittot och in i artikelkopplingen", async () => {
+  const tagged = { ...receipt.lines[1], articleNo: "999", styles: ["mexikanskt"], role: "mejeri", kind: "crème fraiche", packageSize: { qty: 2, unit: "dl" } };
+  const [line] = receiptLines({ ...receipt, lines: [tagged] }, {});
+  assert.deepEqual([line.styles, line.role, line.kind], [["mexikanskt"], "mejeri", "crème fraiche"]);
+
+  // Äldre koppling utan taggar ska inte sudda ut Claudes taggar.
+  const [old] = receiptLines({ ...receipt, lines: [tagged] }, { 999: { name: "Crème fraiche", category: "mejeri", zone: "kyl", unit: "st" } });
+  assert.equal(old.kind, "crème fraiche");
+  assert.equal(old.name, "Crème fraiche");
+
+  const { store, KEYS } = await import("../netlify/lib/store.mjs");
+  await store.put(KEYS.articles, {});
+  const form = new FormData();
+  form.append("text", "kvitto");
+  const { id } = await (await ingest(new Request("http://localhost/api/ingest", { method: "POST", headers: H, body: form }))).json();
+  await updateProposal(id, (p) => Object.assign(p, { status: "ready", source: "receipt", meta: {}, lines: [line] }));
+  await pending(post("/api/pending", { id, lineId: line.lineId, decision: "accept" }));
+  const articles = await store.get(KEYS.articles);
+  assert.deepEqual(articles["999"].packageSize, { qty: 2, unit: "dl" });
+  assert.equal(articles["999"].kind, "crème fraiche");
+});
+
 test("åldring sätter probably_out efter perishDays", () => {
   const inv = {
     items: [

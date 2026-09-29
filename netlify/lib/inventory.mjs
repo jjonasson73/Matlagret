@@ -1,7 +1,7 @@
 // Lagret är den enda sanningen. Alla ändringar går via funktionerna här.
 import { store, KEYS } from "./store.mjs";
 import { newId, today } from "./http.mjs";
-import { perishDays } from "./rules.mjs";
+import { perishDays, cleanStyles, ROLES, REMAINING, LEFTOVER_DAYS } from "./rules.mjs";
 
 export async function loadInventory() {
   const inv = (await store.get(KEYS.inventory)) ?? { items: [], updatedAt: null };
@@ -39,10 +39,21 @@ export function makeItem(fields) {
     addedAt: fields.addedAt ?? today(),
     bestBefore: fields.bestBefore ?? null,
     status: "active",
+    styles: cleanStyles(fields.styles),
+    role: ROLES.includes(fields.role) ? fields.role : null,
+    kind: fields.kind || null,
+    opened: false,
+    remaining: null,
+    packageSize: fields.packageSize ?? null,
   };
-  item.perishDays = fields.perishDays ?? perishDays(item);
+  if (item.source === "leftover") item.zone = fields.zone ?? "kyl";
+  item.perishDays = fields.perishDays ?? itemPerishDays(item);
   return item;
 }
+
+// Rester håller några dagar i kylen; infrysta rester åldras inte.
+const itemPerishDays = (item) =>
+  item.source === "leftover" ? (item.zone === "frys" ? null : LEFTOVER_DAYS) : perishDays(item);
 
 const sameThing = (a, b) =>
   a.status !== "out" &&
@@ -64,6 +75,11 @@ export function addOrMerge(inv, fields) {
   existing.bestBefore = incoming.bestBefore ?? existing.bestBefore;
   existing.confidence = incoming.confidence;
   existing.source = incoming.source;
+  // Taggar från en ny tolkning fyller i det som saknas, men skriver inte över rättningar.
+  if (!existing.styles?.length) existing.styles = incoming.styles;
+  existing.role ??= incoming.role;
+  existing.kind ??= incoming.kind;
+  existing.packageSize ??= incoming.packageSize;
   return existing;
 }
 
@@ -71,11 +87,29 @@ export function findItem(inv, id) {
   return inv.items.find((i) => i.id === id);
 }
 
-const EDITABLE = ["name", "category", "zone", "qty", "unit", "bestBefore", "status", "confidence", "addedAt"];
+const EDITABLE = ["name", "category", "zone", "qty", "unit", "bestBefore", "status", "confidence", "addedAt", "kind", "packageSize"];
 
 export function updateItem(item, fields) {
   for (const k of EDITABLE) if (k in fields) item[k] = k === "qty" ? Number(fields[k]) : fields[k];
-  if ("zone" in fields || "category" in fields || "name" in fields) item.perishDays = perishDays(item);
+  if ("kind" in fields) item.kind = fields.kind || null;
+  if ("styles" in fields) item.styles = cleanStyles(fields.styles);
+  if ("role" in fields) item.role = ROLES.includes(fields.role) ? fields.role : null;
+  if ("zone" in fields || "category" in fields || "name" in fields) item.perishDays = itemPerishDays(item);
+  return item;
+}
+
+// Öppnad förpackning: remaining = hur mycket av den öppnade förpackningen som är kvar.
+// null = oöppnad. Gäller en förpackning; resten av qty räknas som hela.
+export function setOpened(item, remaining) {
+  if (remaining == null) {
+    item.opened = false;
+    item.remaining = null;
+    return item;
+  }
+  const r = Number(remaining);
+  if (!REMAINING.includes(r)) throw new Error(`Ogiltig mängd kvar: ${remaining}`);
+  item.opened = true;
+  item.remaining = r;
   return item;
 }
 

@@ -40,10 +40,26 @@ export function receiptLines(receipt, articles) {
       alternatives: l.alternatives,
       note: l.note,
       bestBefore: null,
+      styles: l.styles ?? [],
+      role: l.role ?? null,
+      kind: l.kind ?? null,
+      packageSize: l.packageSize ?? null,
       decision: null,
     };
     // Tidigare bekräftad koppling artikelnummer → vara vinner över tolkningen.
-    if (known && l.isFood) line = { ...line, ...known, confidence: "sure", alternatives: [] };
+    // Äldre kopplingar saknar taggar; då behålls Claudes taggar.
+    if (known && l.isFood) {
+      line = {
+        ...line,
+        ...known,
+        styles: known.styles?.length ? known.styles : line.styles,
+        role: known.role ?? line.role,
+        kind: known.kind ?? line.kind,
+        packageSize: known.packageSize ?? line.packageSize,
+        confidence: "sure",
+        alternatives: [],
+      };
+    }
     return l.isFood ? applyZoneRules(line) : line;
   });
 }
@@ -68,6 +84,9 @@ export function photoLines(photo, inventory, { scope = "part" } = {}) {
       confidence: match ? s.confidence : s.confidence === "sure" ? "likely" : s.confidence,
       alternatives: s.alternatives,
       bestBefore: s.bestBefore,
+      styles: s.styles ?? [],
+      role: s.role ?? null,
+      kind: s.kind ?? null,
       decision: null,
     };
   });
@@ -149,20 +168,24 @@ export async function processJob(id) {
   }
 }
 
-// Starta process-background för ett jobb. Svarar 202 direkt.
-export async function startBackground(req, id) {
+// Starta en bakgrundsfunktion. Svarar 202 direkt. Returnerar felet, eller null.
+export async function triggerBackground(req, name, body) {
   const origin = new URL(req.url).origin;
-  let problem;
   try {
-    const res = await fetch(`${origin}/.netlify/functions/process-background`, {
+    const res = await fetch(`${origin}/.netlify/functions/${name}`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": process.env.INGEST_KEY },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) problem = `HTTP ${res.status}`;
+    return res.ok ? null : `HTTP ${res.status}`;
   } catch (e) {
-    problem = e.message;
+    return e.message;
   }
+}
+
+// Starta process-background för ett jobb i inkorgen.
+export async function startBackground(req, id) {
+  const problem = await triggerBackground(req, "process-background", { id });
   if (problem) {
     console.error("Kunde inte starta bakgrundstolkning", id, problem);
     await updateProposal(id, (p) => {

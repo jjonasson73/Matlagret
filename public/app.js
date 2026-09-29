@@ -8,6 +8,7 @@ const ZONES = [
   ["basvara", "Basvaror"],
 ];
 const CONFIDENCE_LABEL = { sure: "säker", likely: "trolig", unsure: "osäker", confirmed: "bekräftad" };
+const FRACTION = { 1: "full", 0.75: "¾", 0.5: "½", 0.25: "¼" };
 const ACTION_LABEL = { add: "Lägg till", confirm: "Finns kvar", probably_out: "Troligen slut", skip: "Ej mat" };
 
 const $ = (sel) => document.querySelector(sel);
@@ -116,11 +117,18 @@ function itemRow(item) {
       "button",
       { class: "name", onclick: () => openItemDialog(item) },
       item.name,
-      h("small", {}, `${fmtQty(item.qty)} ${item.unit}`, item.status === "probably_out" ? " · troligen slut" : "", item.bestBefore ? ` · bf ${item.bestBefore}` : ""),
+      h("small", {},
+        `${fmtQty(item.qty)} ${item.unit}`,
+        item.opened ? ` · öppnad, ${FRACTION[item.remaining] ?? ""} kvar` : "",
+        item.source === "leftover" ? " · rester" : "",
+        item.status === "probably_out" ? " · troligen slut" : "",
+        item.bestBefore ? ` · bf ${item.bestBefore}` : "",
+      ),
     ),
     item.status === "out"
       ? null
       : [
+          h("button", { class: "quick open", onclick: () => openOpenedDialog(item), "aria-label": "Öppnad", title: "Öppnad förpackning" }, item.opened ? FRACTION[item.remaining] : "◐"),
           item.confidence !== "confirmed" || item.status === "probably_out"
             ? h("button", { class: "quick ok", onclick: confirm, "aria-label": "Bekräfta" }, "✓")
             : null,
@@ -131,23 +139,43 @@ function itemRow(item) {
 
 const fmtQty = (q) => (Number.isInteger(q) ? String(q) : q.toFixed(2).replace(/\.?0+$/, "").replace(".", ","));
 
-const ITEM_FIELDS = ["name", "qty", "unit", "zone", "category", "bestBefore"];
+const ITEM_FIELDS = ["name", "qty", "unit", "zone", "category", "bestBefore", "kind", "role"];
 
 // Samma dialog används för lagerposter och för rader som väntar på bekräftelse.
-function openDialog({ title, values, canDelete, onSave }) {
+function openDialog({ title, values, canDelete, canLeftover = false, onSave }) {
   const dlg = $("#dlg-item");
   const form = $("#form-item");
   form.reset();
   $("#dlg-item-title").textContent = title;
   $("#dlg-delete").hidden = !canDelete;
+  $("#leftover-row").hidden = !canLeftover;
   for (const k of ITEM_FIELDS) form.elements[k].value = values[k] ?? "";
+  for (const box of form.querySelectorAll('[name="styles"]')) box.checked = (values.styles ?? []).includes(box.value);
   dlg.onclose = run(async () => {
     if (dlg.returnValue === "cancel" || !dlg.returnValue) return;
-    const fields = Object.fromEntries(new FormData(form));
+    const data = new FormData(form);
+    const fields = Object.fromEntries(data);
+    fields.styles = data.getAll("styles");
     fields.qty = Number(fields.qty);
     if (!fields.bestBefore) fields.bestBefore = null;
+    if (fields.leftover) fields.source = "leftover";
+    delete fields.leftover;
     await onSave(dlg.returnValue, fields);
   });
+  dlg.showModal();
+}
+
+function openOpenedDialog(item) {
+  const dlg = $("#dlg-open");
+  $("#dlg-open-title").textContent = `Hur mycket ${item.name} är kvar?`;
+  dlg.onclose = run(async () => {
+    const v = dlg.returnValue;
+    if (!v || v === "cancel") return;
+    const remaining = v === "none" ? null : Number(v);
+    state.inventory = (await api("/api/inventory", { method: "POST", body: { action: "open", id: item.id, remaining } })).inventory;
+    render();
+  });
+  dlg.returnValue = "";
   dlg.showModal();
 }
 
@@ -165,6 +193,7 @@ function openItemDialog(item) {
     title: item ? "Ändra" : "Lägg till",
     values: item ?? { zone: "frys", category: "övrigt", qty: 1, unit: "st" },
     canDelete: !!item,
+    canLeftover: !item,
     onSave: (action, fields) => saveItem(item, action, fields),
   });
 }
@@ -422,6 +451,13 @@ document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("cli
 $("#show-out").addEventListener("change", renderInventory);
 $("#btn-add").addEventListener("click", () => openItemDialog(null));
 $("#btn-settings").addEventListener("click", () => openSettings());
+$('#form-item [name="leftover"]').addEventListener("change", (e) => {
+  if (e.target.checked) $('#form-item [name="zone"]').value = "kyl";
+});
+$("#btn-tag").addEventListener("click", run(async () => {
+  const res = await api("/api/inventory", { method: "POST", body: { action: "tagAll" } });
+  toast(res.untagged ? `Taggar ${res.untagged} varor – klart om en minut` : "Alla varor är redan taggade");
+}));
 
 function openSettings() {
   const dlg = $("#dlg-settings");

@@ -12,7 +12,7 @@ import { loadPending, savePending, applyLine, isFinished } from "../lib/pending.
 import { applyZoneRules } from "../lib/rules.mjs";
 import { startBackground } from "../lib/process.mjs";
 
-const LINE_EDITS = ["name", "category", "zone", "qty", "unit", "bestBefore"];
+const LINE_EDITS = ["name", "category", "zone", "qty", "unit", "bestBefore", "styles", "role", "kind"];
 
 export default async (req) => {
   const denied = checkKey(req);

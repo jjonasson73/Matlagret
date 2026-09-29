@@ -4,6 +4,30 @@ export const CATEGORIES = ["protein", "grönsak", "mejeri", "torrvara", "krydda"
 export const ZONES = ["kyl", "frys", "skafferi", "kryddor", "basvara"];
 export const CONFIDENCE = ["sure", "likely", "unsure", "confirmed"];
 
+// Matplan och inköpslista (SPEC-matplan.md, steg 0).
+export const STYLES = ["asiatiskt", "italienskt", "mexikanskt", "husman", "dessert"];
+export const ROLES = ["protein", "kolhydrat", "grönsak", "mejeri", "smaksättning", "dessert", "övrigt"];
+export const REMAINING = [1, 0.75, 0.5, 0.25];
+export const LEFTOVER_DAYS = 3;
+
+// Stiltaggar kan komma som lista eller som kommaseparerad text från formulär.
+export function cleanStyles(styles) {
+  const list = typeof styles === "string" ? styles.split(",") : styles ?? [];
+  return [...new Set(list.map((s) => String(s).trim().toLowerCase()).filter((s) => STYLES.includes(s)))];
+}
+
+// Det som sparas i kopplingen artikelnummer → vara.
+export const articleFields = (x) => ({
+  name: x.name,
+  category: x.category,
+  zone: x.zone,
+  unit: x.unit,
+  styles: cleanStyles(x.styles),
+  role: x.role ?? null,
+  kind: x.kind ?? null,
+  packageSize: x.packageSize ?? null,
+});
+
 // Användarregler som alltid gäller vid tolkning. Skickas med i prompten och
 // tillämpas dessutom deterministiskt i applyZoneRules().
 export const USER_RULES = [
