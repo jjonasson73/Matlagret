@@ -4,7 +4,19 @@ import { newId, today } from "./http.mjs";
 import { perishDays } from "./rules.mjs";
 
 export async function loadInventory() {
-  return (await store.get(KEYS.inventory)) ?? { items: [], updatedAt: null };
+  const inv = (await store.get(KEYS.inventory)) ?? { items: [], updatedAt: null };
+  return migrate(inv);
+}
+
+// Engångsflyttar när datamodellen ändras. Körs vid läsning och sparas med nästa ändring.
+function migrate(inv) {
+  if (!inv.migrations?.includes("kryddor")) {
+    for (const item of inv.items) {
+      if (item.category === "krydda" && item.zone === "skafferi") item.zone = "kryddor";
+    }
+    inv.migrations = [...(inv.migrations ?? []), "kryddor"];
+  }
+  return inv;
 }
 
 export async function saveInventory(inv) {

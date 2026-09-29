@@ -1,7 +1,7 @@
 // Domänregler: kategorier, zoner, hållbarhet och användarens egna regler.
 
 export const CATEGORIES = ["protein", "grönsak", "mejeri", "torrvara", "krydda", "snacks", "dryck", "övrigt"];
-export const ZONES = ["kyl", "frys", "skafferi", "basvara"];
+export const ZONES = ["kyl", "frys", "skafferi", "kryddor", "basvara"];
 export const CONFIDENCE = ["sure", "likely", "unsure", "confirmed"];
 
 // Användarregler som alltid gäller vid tolkning. Skickas med i prompten och
@@ -18,6 +18,8 @@ const FREEZE_DIRECTLY = [
 
 export function applyZoneRules(line) {
   if (line.zone === "basvara") return line;
+  // Torra kryddor har en egen plats. Färska örter (kyl) och frysta ligger kvar.
+  if (line.category === "krydda" && line.zone === "skafferi") return { ...line, zone: "kryddor" };
   if (FREEZE_DIRECTLY.some((re) => re.test(line.name)) && !/knäck|skorpor|rån/i.test(line.name)) {
     return { ...line, zone: "frys", ruleApplied: "fryses direkt" };
   }
@@ -27,7 +29,7 @@ export function applyZoneRules(line) {
 // Hållbarhet i dagar från addedAt. null = åldras inte.
 // Riktvärden: bladgrönsaker 5, färsk frukt 7, mjölk 7, färskt kött 3, bröd 4.
 export function perishDays({ name = "", category, zone }) {
-  if (zone === "frys" || zone === "skafferi" || zone === "basvara") return null;
+  if (zone === "frys" || zone === "skafferi" || zone === "kryddor" || zone === "basvara") return null;
   const n = name.toLowerCase();
   if (/sallad|spenat|ruccola|mache|bladgr|örtkruka|basilika|persilja|koriander/.test(n)) return 5;
   if (/mjölk|fil\b|filmjölk|grädde/.test(n)) return 7;
