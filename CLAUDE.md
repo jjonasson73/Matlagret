@@ -43,6 +43,8 @@ perishDays        // hållbarhet i dagar från addedAt, per kategori
 status            // active | probably_out | out
 ```
 
+Fälten för matplan och inköpslista (`styles`, `role`, `kind`, `opened`, `remaining`, `packageSize`) beskrivs i `SPEC-matplan.md`.
+
 ### Säkerhetsnivåer
 
 - `sure` – tydligt läsbar etikett eller rad på kvittot
@@ -75,7 +77,8 @@ Statisk frontend plus Netlify Functions. **Ingen Supabase.**
                   Kräver header x-api-key.
                   Kallar Claude, sparar förslag i Blobs, returnerar 200 snabbt.
 /api/inventory    GET lager, POST bekräfta/ändra/ta bort
-/api/suggest      POST { days, people } → receptförslag + inköpslista
+/api/suggest      POST { meals: [{ date, type, style, maxMinutes, people }] }
+                  → matplan + inköpslista (se SPEC-matplan.md)
 /api/pending      GET förslag som väntar på bekräftelse
 ```
 
@@ -155,7 +158,7 @@ Bilder tas direkt i appen med kameraknapp, som alternativ till genvägen.
 
 **Steg 3:** Bildtolkning per zon och avstämning mot lagret.
 
-**Steg 4:** Receptförslag och inköpslista.
+**Steg 4:** Receptförslag och inköpslista. Detaljerad spec och byggordning i `SPEC-matplan.md`.
 
 **Steg 5:** Åldringsjobb och överlagervarning.
 
