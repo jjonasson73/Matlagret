@@ -32,7 +32,7 @@ Observerade träffsäkerheter i valideringen:
 id
 name              // "Nötfärs 20%"
 category          // protein | grönsak | mejeri | torrvara | krydda | snacks | dryck | övrigt
-zone              // kyl | frys | skafferi | basvara
+zone              // kyl | frys | skafferi | kryddor | basvara
 qty, unit         // 2, "kg"
 confidence        // sure | likely | unsure | confirmed
 source            // receipt | photo | manual | harvest

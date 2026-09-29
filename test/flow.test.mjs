@@ -183,6 +183,26 @@ test("manuell frysregistrering och snabbknappar", async () => {
   assert.equal(body.inventory.items.find((i) => i.id === id).status, "out");
 });
 
+test("kryddor: torra kryddor får egen zon, befintliga flyttas en gång", async () => {
+  const { applyZoneRules } = await import("../netlify/lib/rules.mjs");
+  assert.equal(applyZoneRules({ name: "Paprikapulver", category: "krydda", zone: "skafferi" }).zone, "kryddor");
+  assert.equal(applyZoneRules({ name: "Basilika", category: "krydda", zone: "kyl" }).zone, "kyl", "färska örter stannar i kylen");
+
+  const { store, KEYS } = await import("../netlify/lib/store.mjs");
+  const { loadInventory, saveInventory } = await import("../netlify/lib/inventory.mjs");
+  const oregano = makeItem({ name: "Oregano", category: "krydda", zone: "skafferi" });
+  await store.put(KEYS.inventory, { items: [oregano] });
+  let inv = await loadInventory();
+  assert.equal(inv.items[0].zone, "kryddor");
+  assert.equal(inv.items[0].perishDays, null, "kryddor åldras inte");
+
+  // Flyttar användaren tillbaka den ska den stanna där.
+  inv.items[0].zone = "skafferi";
+  await saveInventory(inv);
+  inv = await loadInventory();
+  assert.equal(inv.items[0].zone, "skafferi");
+});
+
 test("åldring sätter probably_out efter perishDays", () => {
   const inv = {
     items: [

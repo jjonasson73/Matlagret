@@ -4,6 +4,7 @@ const ZONES = [
   ["kyl", "Kyl"],
   ["frys", "Frys"],
   ["skafferi", "Skafferi"],
+  ["kryddor", "Kryddor"],
   ["basvara", "Basvaror"],
 ];
 const CONFIDENCE_LABEL = { sure: "säker", likely: "trolig", unsure: "osäker", confirmed: "bekräftad" };
@@ -258,7 +259,7 @@ function lineRow(p, l) {
     renderPending();
   };
   const reject = run(() => decide({ id: p.id, lineId: l.lineId, decision: "reject" }));
-  const nextZone = { kyl: "frys", frys: "skafferi", skafferi: "basvara", basvara: "kyl" };
+  const nextZone = { kyl: "frys", frys: "skafferi", skafferi: "kryddor", kryddor: "basvara", basvara: "kyl" };
   return h(
     "li",
     { class: `line conf-${l.confidence} action-${l.action}` },

@@ -74,7 +74,7 @@ Regler:
 - confidence: "sure" bara när raden är entydig. Hellre "unsure" än en felaktig "likely" – användaren kontrollerar inte "likely".
 - alternatives: bara när förkortningen kan betyda helt olika varor ("Creme fraich" → crème fraiche eller gräddfil). Lista inte varianter av samma vara (fryst/torkad/på burk, olika fetthalter) och inte "Annan …". Hellre en tom lista än konstlade alternativ.
 - Är varan tydlig men förpackningen okänd, välj den vanligaste formen och sätt confidence "sure".
-- zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Mjöl, socker, salt, olja och liknande = basvara.
+- zone: kyl, frys eller skafferi efter hur varan normalt förvaras. Torra kryddor och kryddblandningar = kryddor (färska örter = kyl). Mjöl, socker, salt, olja och liknande = basvara.
 
 Användarens egna regler (gäller alltid):
 ${USER_RULES.map((r) => "- " + r).join("\n")}`;
