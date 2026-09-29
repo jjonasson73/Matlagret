@@ -29,19 +29,32 @@
 
     <section id="view-bekrafta" class="view" hidden>
       <div class="inbox">
-        <label class="btn">📷 Fota
-          <input type="file" id="in-photo" accept="image/*" capture="environment" hidden>
-        </label>
         <select id="photo-zone" aria-label="Zon för fotot">
           <option value="">Zon: gissa</option>
           <option value="kyl">Kyl</option>
           <option value="frys">Frys</option>
           <option value="skafferi">Skafferi</option>
         </select>
+        <label class="btn" title="Ett foto – bara det som syns räknas">📷 Foto
+          <input type="file" id="in-photo" accept="image/*" capture="environment" hidden>
+        </label>
+        <button id="btn-scan" class="btn" title="Flera foton av hela zonen">🔍 Skanna hela</button>
         <label class="btn">📄 Kvitto
           <input type="file" id="in-file" accept="application/pdf,image/*,text/plain" hidden>
         </label>
         <button id="btn-paste" class="btn">📋 Klistra in</button>
+      </div>
+      <div id="scan" class="scan" hidden>
+        <p><strong id="scan-title">Skanna</strong><br>
+          <small>Fota hyllor, dörr och lådor. Det som inte syns på något foto föreslås som slut.</small></p>
+        <div id="scan-thumbs" class="thumbs"></div>
+        <menu>
+          <button id="scan-cancel">Avbryt</button>
+          <label class="btn">📷 Ta foto
+            <input type="file" id="scan-photo" accept="image/*" capture="environment" hidden>
+          </label>
+          <button id="scan-done" class="primary" disabled>Klar</button>
+        </menu>
       </div>
       <div id="pending"></div>
     </section>
