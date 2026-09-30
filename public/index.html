@@ -69,7 +69,23 @@
     </section>
 
     <section id="view-inkop" class="view" hidden>
-      <p class="empty">Inköpslistan kommer i steg 4.</p>
+      <form id="shop-form" class="shop-add">
+        <input id="shop-input" placeholder="Lägg till, t.ex. 2 crème fraiche" autocomplete="off" enterkeyhint="done">
+        <button class="primary" aria-label="Lägg till">+</button>
+      </form>
+      <div id="shop-warning" class="warning" hidden>
+        <p id="shop-warning-text"></p>
+        <menu>
+          <button id="shop-warning-ok">Okej</button>
+          <button id="shop-warning-force" class="primary">Lägg till ändå</button>
+        </menu>
+      </div>
+      <div id="shop-list"></div>
+      <div class="toolbar shop-actions">
+        <button id="shop-copy" class="primary">📋 Kopiera</button>
+        <button id="shop-share" class="btn">Dela</button>
+        <button id="shop-clear" class="btn">Rensa avbockade</button>
+      </div>
     </section>
   </main>
 

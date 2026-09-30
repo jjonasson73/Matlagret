@@ -67,12 +67,13 @@ const run = (fn) => async (...args) => {
 
 // ---- State ----
 
-const state = { inventory: { items: [] }, pending: [], view: "lager" };
+const state = { inventory: { items: [] }, pending: [], shopping: null, view: "lager" };
 
 async function refresh() {
-  const [inv, pen] = await Promise.all([api("/api/inventory"), api("/api/pending")]);
+  const [inv, pen, shop] = await Promise.all([api("/api/inventory"), api("/api/pending"), api("/api/shopping")]);
   state.inventory = inv;
   state.pending = pen.pending;
+  state.shopping = shop;
   render();
 }
 
@@ -459,11 +460,108 @@ async function shrink(file, max = 1600) {
   }
 }
 
+// ---- Inköpslistan ----
+
+const ZONE_LABEL = Object.fromEntries(ZONES);
+
+function renderShopping() {
+  const root = $("#shop-list");
+  root.replaceChildren();
+  const shop = state.shopping;
+  const items = shop?.list.items ?? [];
+  $(".shop-actions").hidden = !items.length;
+  $("#shop-share").hidden = !navigator.share;
+  if (!items.length) {
+    root.append(h("p", { class: "empty" }, "Listan är tom. Skriv en vara ovanför – appen kollar först om den redan finns hemma."));
+    return;
+  }
+  for (const section of shop.sections) {
+    const rows = items.filter((e) => e.section === section);
+    if (!rows.length) continue;
+    root.append(h("h2", { class: "zone" }, section), h("ul", { class: "items" }, rows.map(shopRow)));
+  }
+}
+
+function shopRow(e) {
+  const toggle = run(async () => shopAction({ action: "check", id: e.id, checked: !e.checked }));
+  const remove = run(async () => shopAction({ action: "remove", id: e.id }));
+  return h(
+    "li",
+    { class: `item shop ${e.checked ? "checked" : ""}` },
+    h("input", { type: "checkbox", checked: e.checked, onchange: toggle, "aria-label": `Bocka av ${e.name}` }),
+    h("span", { class: "name" }, e.display, e.note ? h("small", {}, e.note) : null),
+    h("button", { class: "quick no", onclick: remove, "aria-label": "Ta bort" }, "✕"),
+  );
+}
+
+async function shopAction(body) {
+  state.shopping = await api("/api/shopping", { method: "POST", body });
+  renderShopping();
+  return state.shopping;
+}
+
+function describeFound(res) {
+  const where = res.found.map((f) => `${f.name} (${ZONE_LABEL[f.zone]?.toLowerCase() ?? f.zone}${f.opened ? `, ${FRACTION[f.remaining]} kvar` : ""})`);
+  const what = res.kind ?? res.entry.name.toLowerCase();
+  if (res.verdict === "overstock") {
+    const amount = res.found.length > 1 ? `${res.found.length} sorters ${what}` : `${res.count} förpackningar ${what}`;
+    return `Du har redan ${amount} hemma: ${where.join(", ")}.`;
+  }
+  return `Finns hemma: ${where.join(", ")}.`;
+}
+
+let pendingForce = null;
+
+$("#shop-form").addEventListener("submit", run(async (ev) => {
+  ev.preventDefault();
+  const text = $("#shop-input").value.trim();
+  if (!text) return;
+  const res = await shopAction({ action: "add", text });
+  $("#shop-warning").hidden = res.added;
+  if (res.added) {
+    $("#shop-input").value = "";
+    if (res.note) toast(res.note);
+    return;
+  }
+  $("#shop-warning-text").textContent = describeFound(res);
+  pendingForce = text;
+}));
+
+$("#shop-warning-ok").addEventListener("click", () => {
+  $("#shop-warning").hidden = true;
+  $("#shop-input").value = "";
+  pendingForce = null;
+});
+
+$("#shop-warning-force").addEventListener("click", run(async () => {
+  if (!pendingForce) return;
+  await shopAction({ action: "add", text: pendingForce, force: true });
+  $("#shop-warning").hidden = true;
+  $("#shop-input").value = "";
+  pendingForce = null;
+}));
+
+$("#shop-copy").addEventListener("click", run(async () => {
+  await navigator.clipboard.writeText(state.shopping.text);
+  toast("Kopierat – klistra in i ICA-appen");
+}));
+
+$("#shop-share").addEventListener("click", run(async () => {
+  try {
+    await navigator.share({ text: state.shopping.text });
+  } catch (e) {
+    if (e.name !== "AbortError") throw e;
+  }
+}));
+
+$("#shop-clear").addEventListener("click", run(async () => shopAction({ action: "clearChecked" })));
+
 // ---- Navigering & inställningar ----
 
 function render() {
   renderInventory();
   renderPending();
+  renderShopping();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;
   $("#badge").textContent = String(n);

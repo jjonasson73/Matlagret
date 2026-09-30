@@ -65,6 +65,10 @@ curl -H "x-api-key: $INGEST_KEY" -F file=@testdata/kvitto.pdf "http://localhost:
 
 - [x] Steg 1: inkorg för PDF/text, kvittotolkning, lager i Blobs, lagervy
 - [x] Steg 2: bekräftelsevy, manuella ändringar, frysregistrering (+ Lägg till, zon Frys)
-- [~] Steg 3: första version av fototolkning per zon finns, inte testad mot riktiga bilder
-- [ ] Steg 4: receptförslag och inköpslista
-- [~] Steg 5: nattligt åldringsjobb finns; överlagervarning saknas
+- [x] Steg 3: fototolkning per zon, "Skanna hela" med flera foton
+- [~] Steg 4 (se `SPEC-matplan.md`):
+  - [x] 0. Stiltaggar, roll, varutyp, öppnad förpackning, rester
+  - [x] 1. Inköpslista med kontroll mot lagret, överlagervarning, förpackningar, avdelningar, kopiering, avbockning via kvitto
+  - [ ] 2–5. Kandidatlista, generering, lås/regenerera/lagad, kreativt läge
+  - [ ] 6–7. Receptinläsning och sparade recept
+- [x] Steg 5: nattligt åldringsjobb och överlagervarning
