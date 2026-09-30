@@ -140,3 +140,5 @@ dialog fieldset.styles input, dialog label.check input { width: auto; }
 dialog label.check { margin-bottom: 10px; }
 dialog menu.choices button { flex: 1; justify-content: center; font-size: 18px; }
 dialog .hint { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
+
+.banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--card); border: 1px solid var(--accent); border-radius: 12px; padding: 8px 10px 8px 12px; margin-bottom: 12px; font-size: 14px; }

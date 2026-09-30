@@ -78,7 +78,39 @@ async function refresh() {
 
 // ---- Lager ----
 
+// Varor utan role har inte fått stil/roll/typ än (lagret från före steg 0).
+const untaggedCount = () => state.inventory.items.filter((i) => i.status !== "out" && !i.role).length;
+
+function renderTagBanner() {
+  const n = untaggedCount();
+  $("#tag-banner").hidden = !n;
+  $("#tag-banner-text").textContent = state.tagging
+    ? `Taggar ${n} varor… klart om någon minut.`
+    : `${n} varor saknar stil och typ.`;
+  $("#btn-tag-banner").hidden = !!state.tagging;
+}
+
+async function startTagging() {
+  const res = await api("/api/inventory", { method: "POST", body: { action: "tagAll" } });
+  if (!res.untagged) return toast("Alla varor är redan taggade");
+  toast(`Taggar ${res.untagged} varor`);
+  state.tagging = true;
+  renderTagBanner();
+  // Bakgrundsjobbet tar ungefär en minut; hämta lagret igen tills allt är taggat.
+  const poll = run(async () => {
+    await refresh();
+    if (untaggedCount() && Date.now() - started < 5 * 60e3) setTimeout(poll, 20e3);
+    else {
+      state.tagging = false;
+      renderTagBanner();
+    }
+  });
+  const started = Date.now();
+  setTimeout(poll, 30e3);
+}
+
 function renderInventory() {
+  renderTagBanner();
   const showOut = $("#show-out").checked;
   const root = $("#inventory");
   root.replaceChildren();
@@ -121,6 +153,7 @@ function itemRow(item) {
         `${fmtQty(item.qty)} ${item.unit}`,
         item.opened ? ` · öppnad, ${FRACTION[item.remaining] ?? ""} kvar` : "",
         item.source === "leftover" ? " · rester" : "",
+        item.styles?.length ? ` · ${item.styles.join(", ")}` : "",
         item.status === "probably_out" ? " · troligen slut" : "",
         item.bestBefore ? ` · bf ${item.bestBefore}` : "",
       ),
@@ -454,10 +487,8 @@ $("#btn-settings").addEventListener("click", () => openSettings());
 $('#form-item [name="leftover"]').addEventListener("change", (e) => {
   if (e.target.checked) $('#form-item [name="zone"]').value = "kyl";
 });
-$("#btn-tag").addEventListener("click", run(async () => {
-  const res = await api("/api/inventory", { method: "POST", body: { action: "tagAll" } });
-  toast(res.untagged ? `Taggar ${res.untagged} varor – klart om en minut` : "Alla varor är redan taggade");
-}));
+$("#btn-tag").addEventListener("click", run(startTagging));
+$("#btn-tag-banner").addEventListener("click", run(startTagging));
 
 function openSettings() {
   const dlg = $("#dlg-settings");
