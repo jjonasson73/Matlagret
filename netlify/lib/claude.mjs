@@ -79,7 +79,7 @@ const BRANDS = [
 ];
 
 const TAG_RULES = `Taggar för matplanering:
-- styles: vilka köksstilar varan är typisk för (${STYLES.join(", ")}). Tom lista för neutrala varor som mjölk eller lök. Flera går bra: riven ost passar både italienskt och mexikanskt.
+- styles: bara för varor som tydligt pekar ut ett kök (${STYLES.join(", ")}): sojasås, tortillas, tacokrydda, pesto, ramen. Stilen hör till receptet, inte till råvaran, så de flesta varor ska ha tom lista – mjölk, lök, ägg, potatis, ris, kyckling. Flera stilar går bra när varan är typisk för flera kök.
 - role: varans roll i en måltid. protein (kött, fisk, ägg, bönor, tofu), kolhydrat (pasta, ris, potatis, bröd, tortillas), grönsak (även frukt och bär), mejeri, smaksättning (såser, kryddor, buljong, pesto), dessert (sötsaker, glass, bakning), övrigt.
 - kind: generisk varutyp i singular och gemener, så att olika sorter av samma sak får samma kind ("Spirali" och "Spaghetti" → "pasta", "Pärlsocker" → "socker", "Levain" → "bröd").`;
 

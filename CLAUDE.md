@@ -77,7 +77,7 @@ Statisk frontend plus Netlify Functions. **Ingen Supabase.**
                   Kräver header x-api-key.
                   Kallar Claude, sparar förslag i Blobs, returnerar 200 snabbt.
 /api/inventory    GET lager, POST bekräfta/ändra/ta bort
-/api/suggest      POST { meals: [{ date, type, style, maxMinutes, people }] }
+/api/suggest      POST { meals: [{ date, type, style, maxMinutes, people, creativity }] }
                   → matplan + inköpslista (se SPEC-matplan.md)
 /api/pending      GET förslag som väntar på bekräftelse
 ```
