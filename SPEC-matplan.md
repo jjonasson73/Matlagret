@@ -5,7 +5,7 @@ Bygger vidare på `CLAUDE.md`. Förutsätter att lager, inkorg och bekräftelsev
 Omfattar fyra delar:
 
 - **0.** Utökad lagerpost – det som kandidatlistan, överlagervarningen och avdraget behöver
-- **A.** Beställningsmodellen och matplansgenereringen
+- **A.** Beställningsmodellen och matplansgenereringen, inklusive nya recept utifrån smakkombinationer
 - **B.** Inköpslistan
 - **C.** Receptbanken och inläsning av externa recept
 
@@ -16,7 +16,7 @@ Omfattar fyra delar:
 Nya fält på `item`:
 
 ```
-styles            // ["asiatiskt", "italienskt", ...] – stiltaggar, kan vara flera
+styles            // ["asiatiskt", ...] – bara för stilbärande varor, oftast tom (se nedan)
 role              // protein | kolhydrat | grönsak | mejeri | smaksättning | dessert | övrigt
 kind              // generisk varutyp: "pasta", "bröd", "socker", "sojabönor"
 opened            // true om förpackningen är öppnad
@@ -29,6 +29,7 @@ Nytt värde för `source`: `leftover` (rester från en lagad rätt).
 ### Hur fälten sätts
 
 - **`styles`, `role`, `kind`** sätts av Claude i samma anrop som kvitto- och fototolkningen, alltså utan extra kostnad. Befintliga varor taggas en gång i efterhand med ett samlat anrop. Alla tre kan rättas i redigeringsdialogen.
+- **`styles` är medvetet gles.** Stilen hör till receptet, inte till råvaran. Bara varor som tydligt pekar ut ett kök får en stil – sojasås, tortillas, tacokrydda, pesto, ramen. Neutrala varor som mjölk, lök, ägg, potatis och ris lämnas utan. Att de flesta varor saknar stil är alltså rätt, inte en brist. `role` och `kind` ska däremot finnas på nästan alla varor.
 - **`packageSize`** sparas i kopplingen artikelnummer → vara när kvittot anger det. Annars används en tabell med vanliga storlekar (crème fraiche 2 dl, nötfärs 500 g, pasta 500 g …).
 - **`opened` och `remaining`** sätts från lagervyn: knappen **Öppnad** på en rad ger snabbval **Full · ¾ · ½ · ¼**. Raden visar då t.ex. "½ kvar". Gäller den öppnade förpackningen – 3 st med en öppnad till hälften är 2 hela och en halv. Sätts också automatiskt vid "Markera som lagad" (se A).
 - **Rester** läggs in vid "Markera som lagad" om användaren svarar att det blev över: zon kyl, `source: leftover`, `perishDays: 3`.
@@ -45,7 +46,7 @@ Användaren beställer måltider, inte dagar – men varje måltid får en dag. 
 
 ```
 meals: [
-  { date, type, style, maxMinutes, people }
+  { date, type, style, maxMinutes, people, creativity }
 ]
 ```
 
@@ -54,32 +55,35 @@ meals: [
 - `style` – vardagsmat | asiatiskt | italienskt | husman | mexikanskt | fritt
 - `maxMinutes` – 20 | 30 | 45 | fritt
 - `people` – antal, förvalt 4
+- `creativity` – känd (förval) | ny, se "Kreativitet" nedan
 
 Varje måltid beställs separat. Det ska gå att blanda: två middagar på 30 minuter, en matlåda och en dessert.
 
-### Stilen styr urvalet, inte bara prompten
+### Stilen hör till måltiden
 
-Kandidatlistan viktas efter vald stil **innan** anropet till Claude, med hjälp av `styles` på lagerposterna.
+Stilen väljs i beställningen och är ett uppdrag till Claude: "hitta på en asiatisk middag". Claude får använda neutrala varor som kyckling, ris och broccoli i vilken stil som helst.
 
-Exempel från det befintliga lagret:
+`styles` på lagerposterna används bara som en **liten knuff** när kandidatlistan byggs: har hushållet sojasås och sushiris hamnar de lite högre upp vid en asiatisk beställning, så att de används i stället för att köpas nytt. Det är aldrig ett krav, och en vara utan stil straffas inte.
 
-- **asiatiskt** – sojabönor, sushiris, ramen, Buldak, tahini, panko, sojasås, broccoli
-- **italienskt** – spirali, spaghetti, risoni, Collezione, pesto, hushållsost, oliver, salami
-- **mexikanskt** – tacosås, kidneybönor, majs, tortillas, tacokrydda, avokado, riven ost
-- **husman** – potatis, morot, rödlök, lax, prinskorv, dill, ströbröd
-- **dessert** – pärlsocker, florsocker, mjöl, kakao, bourbonvanilj, frysta bär, fruktmix, glass
+Exempel på stilbärande varor i det befintliga lagret:
+
+- **asiatiskt** – sushiris, ramen, Buldak, tahini, panko, sojasås
+- **italienskt** – Collezione, pesto, oliver, salami
+- **mexikanskt** – tacosås, tortillas, tacokrydda
+- **husman** – prinskorv, ströbröd
+- **dessert** – pärlsocker, florsocker, kakao, bourbonvanilj
 
 ### Generering i två steg
 
 **Steg 1, i kod: bygg kandidatlistan.**
 
 ```
-score = brådska + stilmatchning + öppnad förpackning
+score = brådska + öppnad förpackning + stilknuff
 ```
 
 - **brådska** – rester och `probably_out` högst, sedan färskvaror nära `perishBy`, sedan fryst, sedan skafferi
-- **stilmatchning** – träff på vald stil ger stort påslag
 - **öppnad förpackning** – påslag, större ju mindre som är kvar
+- **stilknuff** – litet påslag för varor vars `styles` matchar vald stil. Väger klart mindre än brådska.
 
 Plocka topp-kandidater per `role`. Skicka **30–40 varor**, inte hela lagret. Basvaror skickas som en kort lista utan poäng, eftersom de alltid finns. Skicka också de 10 senaste lagade rätterna, för variation.
 
@@ -128,6 +132,47 @@ Kontrollera resultatet och generera om den enskilda måltid som bryter mot en re
 - **Lås en måltid.** Låsta rätter ligger kvar och skickas med som kontext när övriga genereras om.
 - **Markera som lagad.** Visar `uses` som en lista där varje rad har ett förval – **slut**, **öppnad ¾ / ½ / ¼** eller **kvar** – gissat utifrån mängden. Ett tryck på "Bekräfta" godkänner alla förval (grundprincip 3: ingenting ändras utan bekräftelse). Frågar sedan "Blev det rester?" och lägger i så fall in dem. Rätten läggs i historiken.
 - **Påminnelse om upptining.** Dagen före en måltid med `thawAhead` visas en banderoll överst i appen: "Ta fram laxen till imorgon". Push-notiser är ett senare steg – de kräver Web Push, en schemalagd funktion och att appen ligger på hemskärmen.
+- **Överraska mig.** Samma som "regenerera", men med `creativity: "ny"` (se nedan).
+
+### Kreativitet: nya recept med smakkombinationer
+
+Utöver kända rätter ska appen kunna hitta på något nytt utifrån vilka råvaror som passar ihop.
+
+Varje måltid i beställningen får fältet:
+
+```
+creativity        // känd (förval) | ny
+```
+
+- **känd** – etablerade rätter i vald stil: pad thai, köttfärssås, tacos.
+- **ny** – en rätt som inte behöver finnas som känt recept, byggd kring smakkombinationer.
+
+**Så byggs en ny rätt**
+
+1. **Ankare.** Utgå från 1–3 varor i lagret, i första hand de med högst brådska eller som är öppnade. Användaren kan också välja ankare själv ("gör något med rödbetorna och fetaosten").
+2. **Smakkombinationer.** Claude väljer resten utifrån vilka råvaror som passar ihop – dels klassiska par som kockar använder (tomat–basilika, morot–kardemumma, jordgubbe–svartpeppar, lax–dill–citron), dels par som delar aromämnen (tanken bakom *food pairing*). Västerländsk matlagning parar ofta ingredienser med gemensamma aromer, medan östasiatisk oftare bygger på kontraster – det kan styra vilken sorts kombination som passar vald stil.
+3. **Balans.** Rätten ska ha minst sälta, syra och fett i balans, gärna något sött, beskt, umami och krispigt. Saknas syra föreslås citron, vinäger eller inlagt – helst något som finns.
+4. **En ny sak i taget.** Tekniken och grundformen ska vara bekanta (ugnsrostat, wok, gratäng, pasta), så att bara smakkombinationen är ny. Det ökar chansen att rätten blir god och att den hinns med inom `maxMinutes`.
+
+**Extra fält i svaret för nya rätter**
+
+```json
+{
+  "creativity": "ny",
+  "pairings": [
+    { "ingredients": ["rödbeta", "fetaost", "honung"], "why": "Jordig sötma möter salt syrlighet; honungen binder ihop." }
+  ],
+  "balance": { "salt": "fetaost", "syra": "citron", "fett": "olivolja", "krisp": "rostade solrosfrön" }
+}
+```
+
+`pairings` visas i appen under rätten ("Varför det funkar"), så att man lär sig kombinationerna.
+
+**Kunskapskälla.** Första versionen bygger på Claudes kunskap om smakkombinationer; ingen extern databas behövs. Blir förslagen enformiga kan en egen tabell med kombinationer läggas till senare – skriven av oss själva, eftersom etablerade uppslagsverk på området är upphovsrättsskyddade.
+
+**Återkoppling.** Efter "Markera som lagad" för en ny rätt: **👍 / 👎** och **Spara som recept**. Tummen ned-kombinationer skickas med vid nästa generering ("undvik rödbeta + honung"), sparade hamnar i receptbanken (del C) och kan då föreslås som kända rätter.
+
+Reglerna gäller även nya rätter. Dessutom: en ny rätt får ha högst två varor i `missing`.
 
 ---
 
@@ -215,8 +260,9 @@ Sparade recept blir kandidater vid generering. Matchar ett sparat recept bestäl
 2. **Beställningsmodellen och kandidatlistan** i kod (utan AI, testbar med logg).
 3. **Generering via Claude** i bakgrunden, plus regelkontrollen.
 4. **Regenerera och lås** per måltid, **markera som lagad** med bekräftelselistan, upptiningsbanderoll.
-5. **Receptinläsning** och avstämning, genvägen "Spara recept".
-6. **Sparade recept** som kandidater i planen.
+5. **Kreativt läge:** `creativity: "ny"`, "Överraska mig", egna ankare, "Varför det funkar", tumme upp/ned.
+6. **Receptinläsning** och avstämning, genvägen "Spara recept".
+7. **Sparade recept** som kandidater i planen, inklusive sparade nya rätter.
 
 Inköpslistan kommer före matplanen eftersom överlagervarningen är det mest värdefulla, och den går att använda direkt med manuellt inlagda varor.
 
@@ -233,6 +279,8 @@ Testfallen nedan utgår från det riktiga lagret. Spara därför en ögonblicksb
 - Inköpslista med crème fraiche i två rätter (200 g + 300 g). Ska slås ihop till en rad med två förpackningar.
 - Pasta på inköpslistan när lagret har fem sorters pasta. Ska ge överlagervarning i stället för en rad.
 - Nötfärs 500 g i en lagad rätt när lagret har 2 st à 500 g. Förvalet ska bli "1 st kvar".
+- En middag med `creativity: "ny"` och ankare rödbeta + fetaost. Svaret ska ha `pairings` med motivering, `balance` med minst salt, syra och fett, högst två varor i `missing` och inte finnas i historiken.
+- En kombination som fått tumme ned ska inte föreslås igen.
 
 ## Kostnad
 
