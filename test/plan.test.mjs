@@ -88,6 +88,29 @@ test("regler: protein i rad, tid, okända varor, öppnat, minst en utan inköp, 
   assert.deepEqual(P.validatePlan(ok, order, candidates, { now: NOW }).bySlot, {});
 });
 
+test("inköpsval: bara hemma, få inköp och gärna inköp", () => {
+  const order3 = (shopping) => P.normalizeOrder([0, 1].map((n) => ({ date: `2026-10-0${n + 1}`, shopping })), NOW);
+  const buy = (n) => Array.from({ length: n }, (_, i) => ({ name: `Vara ${i}`, qty: 1, unit: "st" }));
+  const two = (a, b) => [meal(0, { mainProtein: "lax", missing: buy(a) }), meal(1, { mainProtein: "kyckling", missing: buy(b) })];
+
+  let r = P.validatePlan(two(1, 0), order3("hemma"), [], { now: NOW }).bySlot;
+  assert.ok(r[0].some((x) => x.includes("kräver inköp")), "bara hemma: inga inköp alls");
+  assert.equal(r[1], undefined);
+
+  r = P.validatePlan(two(4, 0), order3("få"), [], { now: NOW }).bySlot;
+  assert.ok(r[0].some((x) => x.includes("max 3")), "få inköp: högst tre");
+
+  r = P.validatePlan(two(6, 5), order3("fritt"), [], { now: NOW }).bySlot;
+  assert.deepEqual(r, {}, "gärna inköp: ingen gräns och inget krav på en rätt utan inköp");
+  r = P.validatePlan(two(1, 1), order3("få"), [], { now: NOW }).bySlot;
+  assert.ok(Object.values(r).flat().some((x) => x.includes("alla måltider kräver inköp")));
+
+  assert.throws(() => P.normalizeOrder([{ shopping: "massor" }]), /Okänt inköpsval/);
+  const many = { items: Array.from({ length: 70 }, (_, i) => item({ name: `Vara ${i}`, zone: "skafferi", category: "torrvara" })) };
+  assert.equal(P.buildCandidates(many, order3("hemma"), { now: NOW }).candidates.length, P.CANDIDATE_LIMIT_HOME, "fler kandidater när allt ska finnas hemma");
+  assert.equal(P.buildCandidates(many, order3("få"), { now: NOW }).candidates.length, P.CANDIDATE_LIMIT);
+});
+
 test("nya rätter får högst två inköp", () => {
   const o = P.normalizeOrder([{ date: "2026-10-01", creativity: "ny" }], NOW);
   const m = { ...meal(0), creativity: "ny", missing: ["a", "b", "c"].map((name) => ({ name, qty: 1, unit: "st" })) };

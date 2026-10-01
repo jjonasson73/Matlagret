@@ -23,7 +23,7 @@ function alignMeals(order, meals) {
   return order.map((o) => {
     const m = bySlot.get(o.slot);
     if (!m) throw new Error(`Claude svarade inte för måltid ${o.slot + 1}`);
-    return { ...m, slot: o.slot, date: o.date, type: o.type, style: o.style, people: o.people, creativity: o.creativity };
+    return { ...m, slot: o.slot, date: o.date, type: o.type, style: o.style, people: o.people, creativity: o.creativity, shopping: o.shopping };
   });
 }
 

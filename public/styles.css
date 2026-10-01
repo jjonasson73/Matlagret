@@ -184,3 +184,8 @@ dialog .suggest { margin: -4px 0 10px; }
 .shop-big .what { display: flex; flex-direction: column; }
 .shop-big small { font-size: 13px; color: var(--muted); }
 body.no-scroll { overflow: hidden; }
+
+.segmented { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.segmented .seg-label { font-size: 14px; color: var(--muted); margin-right: 2px; }
+.segmented button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; min-height: 36px; font-size: 14px; }
+.segmented button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }

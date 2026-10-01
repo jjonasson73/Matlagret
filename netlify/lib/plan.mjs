@@ -6,8 +6,13 @@ export const MEAL_TYPES = ["middag", "lunch", "matlåda", "dessert", "fredagsmys
 export const MEAL_STYLES = ["vardagsmat", "asiatiskt", "italienskt", "husman", "mexikanskt", "fritt"];
 export const MAX_MINUTES = [20, 30, 45, null]; // null = fritt
 export const CREATIVITY = ["känd", "ny"];
+// Inköp: hemma = bara det som finns, få = högst några varor, fritt = ingen gräns.
+export const SHOPPING = ["hemma", "få", "fritt"];
+export const MAX_MISSING_FEW = 3;
 
 export const CANDIDATE_LIMIT = 36;
+// Utan inköp behöver Claude se mer av lagret för att ha något att välja på.
+export const CANDIDATE_LIMIT_HOME = 50;
 const HISTORY_DAYS = 14;
 const MAX_MISSING_NEW = 2;
 
@@ -24,15 +29,17 @@ export function normalizeOrder(meals, today = new Date()) {
     const type = m.type ?? "middag";
     const style = m.style ?? "vardagsmat";
     const creativity = m.creativity ?? "känd";
+    const shopping = m.shopping ?? "få";
     const maxMinutes = m.maxMinutes === "fritt" || m.maxMinutes == null ? null : Number(m.maxMinutes);
     if (!MEAL_TYPES.includes(type)) throw new Error(`Okänd måltidstyp: ${type}`);
     if (!MEAL_STYLES.includes(style)) throw new Error(`Okänd stil: ${style}`);
     if (!CREATIVITY.includes(creativity)) throw new Error(`Okänd kreativitet: ${creativity}`);
+    if (!SHOPPING.includes(shopping)) throw new Error(`Okänt inköpsval: ${shopping}`);
     if (!MAX_MINUTES.includes(maxMinutes)) throw new Error(`Ogiltig tid: ${m.maxMinutes}`);
     const people = Number(m.people ?? 4);
     if (!(people >= 1 && people <= 12)) throw new Error("Antal personer ska vara 1–12");
     const date = m.date ? isoDay(m.date) : isoDay(today.getTime() + slot * DAY);
-    return { slot, date, type, style, maxMinutes, people, creativity, anchors: m.anchors ?? [] };
+    return { slot, date, type, style, maxMinutes, people, creativity, shopping, anchors: m.anchors ?? [] };
   });
 }
 
@@ -75,7 +82,8 @@ const ALWAYS_THERE = ["basvara", "kryddor"];
 // Liten knuff för stilbärande varor – väger klart mindre än brådska.
 const STYLE_NUDGE = 8;
 
-export function buildCandidates(inventory, order, { now = new Date(), limit = CANDIDATE_LIMIT } = {}) {
+export function buildCandidates(inventory, order, { now = new Date(), limit } = {}) {
+  limit ??= order.some((m) => m.shopping === "hemma") ? CANDIDATE_LIMIT_HOME : CANDIDATE_LIMIT;
   const styles = new Set(order.map((m) => m.style));
   const wantsDessert = order.some((m) => m.type === "dessert" || m.type === "fredagsmys");
   const quota = { ...QUOTA, dessert: wantsDessert ? 6 : QUOTA.dessert };
@@ -161,6 +169,13 @@ export function validatePlan(meals, order, candidates, { history = [], now = new
       flag(m.slot, `okända varor: ${unknown.map((u) => u.name).join(", ")}`, "Använd bara itemId från kandidatlistan; allt annat ska ligga i missing.");
     }
     // Nya rätter får ha högst två inköp.
+    // Inköpsvalet.
+    if (o?.shopping === "hemma" && m.missing.length) {
+      flag(m.slot, `kräver inköp: ${m.missing.map((x) => x.name).join(", ")}`,
+        "Använd bara det som finns i kandidatlistan och bland basvarorna – missing ska vara tom. Byt ut det som saknas.");
+    } else if (o?.shopping === "få" && m.missing.length > MAX_MISSING_FEW) {
+      flag(m.slot, `${m.missing.length} inköp, max ${MAX_MISSING_FEW}`, `Högst ${MAX_MISSING_FEW} varor i missing – använd mer av det som finns.`);
+    }
     if (o?.creativity === "ny" && m.missing.length > MAX_MISSING_NEW) {
       flag(m.slot, `ny rätt med ${m.missing.length} inköp`, `En ny rätt får ha högst ${MAX_MISSING_NEW} varor i missing.`);
     }
@@ -200,8 +215,9 @@ export function validatePlan(meals, order, candidates, { history = [], now = new
     }
   }
 
-  // Regel 3: minst en måltid helt utan inköp.
-  if (meals.length && meals.every((m) => m.missing.length)) {
+  // Regel 3: minst en måltid helt utan inköp – om användaren inte valt "gärna inköp".
+  const freeShopping = order.every((o) => o.shopping === "fritt");
+  if (meals.length && !freeShopping && meals.every((m) => m.missing.length)) {
     const target = pickSlot(meals, locked, (m) => -m.missing.length);
     if (target != null) flag(target, "alla måltider kräver inköp", "Den här rätten ska gå att laga helt med det som finns – missing ska vara tom.");
   }
