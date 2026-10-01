@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { CATEGORIES, ZONES, USER_RULES, STYLES, ROLES } from "./rules.mjs";
+import { MEAL_TYPES, MEAL_STYLES, CREATIVITY } from "./plan.mjs";
 
 export const MODEL = "claude-sonnet-4-6";
 
@@ -202,5 +203,99 @@ export function tagItems(items) {
     system: TAG_SYSTEM,
     schema: Tagging,
     content: [{ type: "text", text: `Tagga de här lagerposterna:\n\n${list}` }],
+  });
+}
+
+// ---- Matplan (SPEC-matplan.md, del A) ----
+
+const Amount = { name: z.string(), qty: z.number(), unit: z.string() };
+
+const PlanMeal = z.object({
+  slot: z.number().describe("Samma slot som i beställningen"),
+  date: z.string(),
+  title: z.string(),
+  type: z.enum(MEAL_TYPES),
+  style: z.enum(MEAL_STYLES),
+  minutes: z.number().describe("Total tid från start till bord"),
+  people: z.number(),
+  creativity: z.enum(CREATIVITY),
+  mainProtein: z.string().describe("Huvudprotein med ett ord i gemener: kyckling, nötfärs, lax, bönor, halloumi – eller ingen"),
+  uses: z.array(z.object({ itemId: z.string(), ...Amount })).describe("Varor ur kandidatlistan med ungefärlig mängd"),
+  missing: z.array(z.object(Amount)).describe("Det som måste köpas; basvaror räknas inte"),
+  substitutions: z.array(z.object({ instead: z.string(), use: z.string(), note: z.string() })),
+  thawAhead: z.array(z.object({ name: z.string(), hoursBefore: z.number() })),
+  steps: z.array(z.string()),
+  pairings: z.array(z.object({ ingredients: z.array(z.string()), why: z.string() })).describe("Bara för creativity ny, annars tom"),
+  balance: z
+    .object({ salt: z.string().nullable(), syra: z.string().nullable(), fett: z.string().nullable(), sött: z.string().nullable(), krisp: z.string().nullable() })
+    .nullable()
+    .describe("Bara för creativity ny, annars null"),
+});
+
+export const Plan = z.object({ meals: z.array(PlanMeal) });
+
+const PLAN_SYSTEM = `Du planerar måltider för ett svenskt hushåll utifrån det de har hemma. Svara med en måltid per beställd slot, i samma ordning, och behåll slot, date, type, style, people och creativity från beställningen.
+
+Prioritering:
+1. Rester och varor som snart blir dåliga (markerade i kandidatlistan).
+2. Protein som redan finns i frysen.
+3. Vald stil och tid.
+4. Så få inköp som möjligt.
+
+Regler:
+- uses får bara innehålla varor ur kandidatlistan, med deras exakta id som itemId. Allt annat som behövs ska ligga i missing.
+- Basvaror och kryddor i listan "Finns alltid" får användas fritt och ska inte stå i uses eller missing.
+- Mängder ska räcka för antal personer. Öppnade förpackningar (markerade) ska användas.
+- minutes får inte överstiga max tid. Räkna med verklig tid, inklusive förberedelser.
+- Använder rätten något från frysen som behöver tinas: lägg det i thawAhead med hoursBefore (oftast 12–24).
+- Variera huvudprotein mellan dagar i rad och undvik det som lagats nyligen.
+- substitutions: när något i lagret kan ersätta en vanlig ingrediens i rätten ("crème fraiche i stället för grädde").
+- steps: 4–8 korta steg på svenska.
+- type dessert eller fredagsmys: söta rätter eller mys, inte middag.
+
+creativity:
+- "känd": en etablerad rätt i vald stil (pad thai, köttfärssås, tacos, pytt i panna). pairings tom, balance null.
+- "ny": en rätt som inte behöver finnas som känt recept. Utgå från ankarvarorna om sådana finns, annars de mest brådskande. Välj resten utifrån smakkombinationer – klassiska par som kockar använder och par som delar aromämnen. Balansera salt, syra och fett, gärna något sött och krispigt. Håll tekniken bekant (ugnsrostat, wok, gratäng, pasta, sallad) så att bara kombinationen är ny. Högst två varor i missing. Förklara 1–3 kombinationer i pairings och fyll balance.`;
+
+const fmtQty = (c) => `${c.qty} ${c.unit}`;
+
+function candidateLine(c) {
+  const notes = [
+    c.leftover && "rester",
+    c.why,
+    c.opened && `öppnad, ${c.remaining == null ? "" : `${Math.round(c.remaining * 100)} % kvar`}`,
+  ].filter(Boolean);
+  return `${c.id} | ${c.name} | ${fmtQty(c)} | ${c.zone} | ${c.role}${notes.length ? " | " + notes.join(", ") : ""}`;
+}
+
+function orderLine(o) {
+  return [
+    `slot ${o.slot}: ${o.date}`,
+    o.type,
+    `stil ${o.style}`,
+    `max ${o.maxMinutes ?? "fritt"} min`,
+    `${o.people} personer`,
+    `creativity ${o.creativity}`,
+    o.anchors?.length ? `ankare: ${o.anchors.join(", ")}` : null,
+  ].filter(Boolean).join(", ");
+}
+
+// Planera en eller flera måltider. fixed = måltider som ligger kvar (låsta eller
+// redan godkända) och skickas med som sammanhang; hints = extra krav per slot.
+export function planMeals({ order, candidates, basics, history = [], fixed = [], hints = {}, avoid = [] }) {
+  const parts = [
+    `Beställning:\n${order.map(orderLine).join("\n")}`,
+    `Kandidatlista (id | namn | mängd | zon | roll | notering):\n${candidates.map(candidateLine).join("\n")}`,
+    `Finns alltid: ${basics.join(", ") || "salt, peppar, olja"}`,
+  ];
+  if (history.length) parts.push(`Lagat nyligen:\n${history.map((h) => `${h.date}: ${h.title} (${h.mainProtein}, ${h.style})`).join("\n")}`);
+  if (fixed.length) parts.push(`Ligger redan i planen (ändra inte, men variera mot dem):\n${fixed.map((m) => `${m.date}: ${m.title} (${m.mainProtein}, ${m.style})`).join("\n")}`);
+  if (avoid.length) parts.push(`Kombinationer som hushållet inte gillade – undvik:\n${avoid.join("\n")}`);
+  const hintLines = Object.entries(hints).flatMap(([slot, list]) => list.map((h) => `slot ${slot}: ${h}`));
+  if (hintLines.length) parts.push(`Måste rättas från förra förslaget:\n${hintLines.join("\n")}`);
+  return parse({
+    system: PLAN_SYSTEM,
+    schema: Plan,
+    content: [{ type: "text", text: parts.join("\n\n") }],
   });
 }

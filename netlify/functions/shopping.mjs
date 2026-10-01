@@ -5,6 +5,8 @@
 //       Kontrolleras mot lagret först. Finns varan redan (eller i överlager) läggs
 //       den inte till, utan svaret är { added: false, verdict, found }. force: true
 //       lägger till ändå.
+//   { action: "addMany", items: [{ name, qty, unit }], source }
+//       Lägger till allt som inte redan finns hemma; resten hoppas över.
 //   { action: "check", id, checked }
 //   { action: "remove", id }
 //   { action: "clearChecked" }
@@ -61,6 +63,33 @@ export default async (req) => {
       sources: [body.source ?? "manual"],
     });
     return reply(await save(list), { added: true, row, ...check });
+  }
+
+  if (body.action === "addMany") {
+    if (!Array.isArray(body.items)) return error("items saknas");
+    const inventory = await loadInventory();
+    const added = [];
+    const skipped = [];
+    for (const it of body.items) {
+      const entry = { name: it.name, qty: Number(it.qty ?? 1), unit: it.unit ?? "st" };
+      if (!entry.name || !(entry.qty > 0)) continue;
+      const check = checkAgainstInventory(entry.name, inventory);
+      if (check.verdict !== "ok") {
+        skipped.push({ name: entry.name, verdict: check.verdict });
+        continue;
+      }
+      const match = inventory.items.find((i) => i.id === check.found[0]?.id);
+      addEntry(list, {
+        ...entry,
+        kind: check.kind ?? match?.kind ?? null,
+        section: sectionFor(entry.name, match),
+        packageSize: match?.packageSize ?? null,
+        note: check.note,
+        sources: [body.source ?? "manual"],
+      });
+      added.push(entry.name);
+    }
+    return reply(await save(list), { added, skipped });
   }
 
   const row = list.items.find((e) => e.id === body.id);

@@ -67,13 +67,14 @@ const run = (fn) => async (...args) => {
 
 // ---- State ----
 
-const state = { inventory: { items: [] }, pending: [], shopping: null, view: "lager" };
+const state = { inventory: { items: [] }, pending: [], shopping: null, plan: null, order: null, editingOrder: false, view: "lager" };
 
 async function refresh() {
-  const [inv, pen, shop] = await Promise.all([api("/api/inventory"), api("/api/pending"), api("/api/shopping")]);
+  const [inv, pen, shop, plan] = await Promise.all([api("/api/inventory"), api("/api/pending"), api("/api/shopping"), api("/api/suggest")]);
   state.inventory = inv;
   state.pending = pen.pending;
   state.shopping = shop;
+  state.plan = plan;
   render();
 }
 
@@ -497,6 +498,7 @@ function shopRow(e) {
 async function shopAction(body) {
   state.shopping = await api("/api/shopping", { method: "POST", body });
   renderShopping();
+  renderPlan();
   return state.shopping;
 }
 
@@ -556,18 +558,155 @@ $("#shop-share").addEventListener("click", run(async () => {
 
 $("#shop-clear").addEventListener("click", run(async () => shopAction({ action: "clearChecked" })));
 
+// ---- Matplan ----
+
+const MEAL_TYPES = ["middag", "lunch", "matlåda", "dessert", "fredagsmys"];
+const MEAL_STYLES = ["vardagsmat", "asiatiskt", "italienskt", "husman", "mexikanskt", "fritt"];
+const MINUTES = [["20", "20 min"], ["30", "30 min"], ["45", "45 min"], ["fritt", "Ingen gräns"]];
+
+const isoDate = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const addDays = (iso, n) => {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return isoDate(d);
+};
+const dayLabel = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" });
+
+function defaultOrder() {
+  const today = isoDate(new Date());
+  return [0, 1, 2].map((n) => ({ date: addDays(today, n), type: "middag", style: "vardagsmat", maxMinutes: "30", people: 4, creativity: "känd" }));
+}
+
+function select(options, value, onchange) {
+  return h("select", { onchange }, options.map(([v, label]) => h("option", { value: v, selected: String(value) === v }, label)));
+}
+
+function orderRow(m, i) {
+  const set = (k) => (e) => {
+    m[k] = e.target.type === "checkbox" ? (e.target.checked ? "ny" : "känd") : e.target.value;
+  };
+  return h(
+    "div",
+    { class: "order-row" },
+    h("input", { type: "date", value: m.date, onchange: set("date"), "aria-label": "Dag" }),
+    select(MEAL_TYPES.map((t) => [t, t]), m.type, set("type")),
+    select(MEAL_STYLES.map((s) => [s, s]), m.style, set("style")),
+    select(MINUTES, m.maxMinutes ?? "fritt", set("maxMinutes")),
+    h("label", { class: "people" }, h("input", { type: "number", min: 1, max: 12, value: m.people, onchange: set("people") }), " pers"),
+    h("label", { class: "creative" }, h("input", { type: "checkbox", checked: m.creativity === "ny", onchange: set("creativity") }), " ✨ Ny rätt"),
+    h("button", { class: "quick no", "aria-label": "Ta bort måltid", onclick: () => { state.order.splice(i, 1); renderPlan(); } }, "✕"),
+  );
+}
+
+function renderPlan() {
+  const plan = state.plan ?? { status: "empty" };
+  const editing = state.editingOrder || plan.status === "empty";
+  if (editing && !state.order) {
+    state.order = plan.order?.length
+      ? plan.order.map((o) => ({ ...o, maxMinutes: o.maxMinutes == null ? "fritt" : String(o.maxMinutes) }))
+      : defaultOrder();
+  }
+  $("#plan-order").hidden = !editing;
+  $("#order-cancel").hidden = plan.status === "empty";
+  if (editing) $("#order-rows").replaceChildren(...state.order.map(orderRow));
+
+  const status = $("#plan-status");
+  const meals = $("#plan-meals");
+  const shop = $("#plan-shopping");
+  status.replaceChildren();
+  meals.replaceChildren();
+  shop.replaceChildren();
+  if (editing) return;
+
+  if (plan.status === "planning") {
+    status.append(h("p", { class: "muted" }, h("span", { class: "spinner" }), " Planerar… det tar 30–60 sekunder."));
+    return;
+  }
+  const newPlan = h("button", { class: "btn", onclick: () => { state.editingOrder = true; state.order = null; renderPlan(); } }, "Ny plan");
+  if (plan.status === "error") {
+    status.append(h("p", { class: "error" }, plan.error ?? "Planeringen misslyckades"), h("div", { class: "toolbar" }, newPlan));
+    return;
+  }
+  status.append(h("div", { class: "toolbar" }, newPlan));
+  meals.append(...[...plan.meals].sort((a, b) => a.date.localeCompare(b.date)).map((m) => mealCard(m, plan.warnings?.[m.slot])));
+
+  const { toBuy = [], atHome = [] } = plan.shopping ?? {};
+  if (toBuy.length || atHome.length) {
+    shop.append(
+      h("h2", { class: "zone" }, "Att köpa"),
+      toBuy.length
+        ? h("ul", { class: "items" }, toBuy.map((e) => h("li", { class: "item" }, h("span", { class: "name" }, e.display))))
+        : h("p", { class: "muted" }, "Inget – allt finns hemma."),
+      atHome.length ? h("p", { class: "muted small" }, "Finns hemma: ", atHome.map((e) => `${e.name} (${e.found.join(", ")})`).join("; ")) : null,
+      toBuy.length
+        ? h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: run(addPlanToShopping) }, `Lägg ${toBuy.length} på inköpslistan`))
+        : null,
+    );
+  }
+}
+
+function mealCard(m, warnings) {
+  const list = (items, fmt) => items.map(fmt).join(", ");
+  const amount = (x) => `${x.name} ${fmtQty(x.qty)} ${x.unit}`;
+  return h(
+    "article",
+    { class: "proposal meal" },
+    h("header", {}, h("h3", {}, m.title), h("span", { class: "muted" }, dayLabel(m.date))),
+    h("p", { class: "muted small" }, [m.type, m.style, `${m.minutes} min`, `${m.people} pers`, m.creativity === "ny" ? "✨ ny rätt" : null].filter(Boolean).join(" · ")),
+    warnings?.length ? h("p", { class: "error small" }, "⚠ ", warnings.join("; ")) : null,
+    m.thawAhead.length ? h("p", { class: "thaw" }, "🧊 Ta fram ", list(m.thawAhead, (t) => t.name), " dagen före") : null,
+    m.uses.length ? h("p", { class: "small" }, h("strong", {}, "Använder: "), list(m.uses, amount)) : null,
+    m.missing.length ? h("p", { class: "small" }, h("strong", {}, "Köp: "), list(m.missing, amount)) : h("p", { class: "small ok" }, "✓ Allt finns hemma"),
+    m.substitutions.length ? h("p", { class: "small" }, h("strong", {}, "Byt: "), list(m.substitutions, (s) => `${s.use} i stället för ${s.instead}`)) : null,
+    m.pairings?.length
+      ? h("details", { open: true }, h("summary", {}, "Varför det funkar"), h("ul", { class: "small" }, m.pairings.map((p) => h("li", {}, h("strong", {}, p.ingredients.join(" + ")), " – ", p.why))))
+      : null,
+    h("details", {}, h("summary", {}, "Gör så här"), h("ol", { class: "small" }, m.steps.map((s) => h("li", {}, s)))),
+  );
+}
+
+async function addPlanToShopping() {
+  const res = await api("/api/shopping", { method: "POST", body: { action: "addMany", items: state.plan.shopping.toBuy, source: "meal" } });
+  state.shopping = res;
+  renderShopping();
+  renderPlan();
+  toast(`La till ${res.added.length} på inköpslistan${res.skipped.length ? `, ${res.skipped.length} fanns redan` : ""}`);
+}
+
+$("#order-add").addEventListener("click", () => {
+  const last = state.order.at(-1);
+  state.order.push({ ...(last ?? defaultOrder()[0]), date: last ? addDays(last.date, 1) : isoDate(new Date()), creativity: "känd" });
+  renderPlan();
+});
+
+$("#order-cancel").addEventListener("click", () => {
+  state.editingOrder = false;
+  state.order = null;
+  renderPlan();
+});
+
+$("#order-go").addEventListener("click", run(async () => {
+  if (!state.order.length) return toast("Lägg till minst en måltid");
+  const meals = state.order.map((m) => ({ ...m, people: Number(m.people) }));
+  state.plan = await api("/api/suggest", { method: "POST", body: { meals } });
+  state.editingOrder = false;
+  state.order = null;
+  render();
+}));
+
 // ---- Navigering & inställningar ----
 
 function render() {
   renderInventory();
   renderPending();
   renderShopping();
+  renderPlan();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;
   $("#badge").textContent = String(n);
   // Fråga igen om något fortfarande tolkas.
   clearTimeout(render.poll);
-  if (state.pending.some((p) => p.status === "queued" || p.status === "processing")) {
+  if (state.plan?.status === "planning" || state.pending.some((p) => p.status === "queued" || p.status === "processing")) {
     render.poll = setTimeout(run(refresh), 4000);
   }
 }

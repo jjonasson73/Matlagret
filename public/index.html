@@ -65,7 +65,18 @@
     </section>
 
     <section id="view-matplan" class="view" hidden>
-      <p class="empty">Matplanen kommer i steg 4.</p>
+      <div id="plan-order" hidden>
+        <p class="hint">Beställ de måltider du ska laga. Planen utgår från det som snart blir dåligt och det som redan är öppnat.</p>
+        <div id="order-rows"></div>
+        <div class="toolbar">
+          <button id="order-add" class="btn">+ Måltid</button>
+          <button id="order-cancel" class="btn" hidden>Avbryt</button>
+          <button id="order-go" class="primary">Planera</button>
+        </div>
+      </div>
+      <div id="plan-status"></div>
+      <div id="plan-meals"></div>
+      <div id="plan-shopping"></div>
     </section>
 
     <section id="view-inkop" class="view" hidden>

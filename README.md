@@ -69,6 +69,8 @@ curl -H "x-api-key: $INGEST_KEY" -F file=@testdata/kvitto.pdf "http://localhost:
 - [~] Steg 4 (se `SPEC-matplan.md`):
   - [x] 0. Stiltaggar, roll, varutyp, öppnad förpackning, rester
   - [x] 1. Inköpslista med kontroll mot lagret, överlagervarning, förpackningar, avdelningar, kopiering, avbockning via kvitto
-  - [ ] 2–5. Kandidatlista, generering, lås/regenerera/lagad, kreativt läge
+  - [x] 2–3. Kandidatlista, generering i bakgrunden, regelkontroll med omförsök, vyn Matplan
+  - [~] 5. Kreativt läge: "✨ Ny rätt" per måltid med "Varför det funkar" (Överraska mig och tumme upp/ned saknas)
+  - [ ] 4. Lås och regenerera per måltid, markera som lagad, upptiningsbanderoll
   - [ ] 6–7. Receptinläsning och sparade recept
 - [x] Steg 5: nattligt åldringsjobb och överlagervarning
