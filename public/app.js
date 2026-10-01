@@ -731,7 +731,8 @@ function renderPlan() {
 
   const { toBuy = [], atHome = [] } = plan.shopping ?? {};
   if (toBuy.length || atHome.length) {
-    shop.append(
+    // Genom h() så att tomma delar (null) hoppas över i stället för att skrivas ut.
+    shop.append(h("div", {},
       h("h2", { class: "zone" }, "Att köpa"),
       toBuy.length
         ? h("ul", { class: "items" }, toBuy.map((e) => h("li", { class: "item" }, h("span", { class: "name" }, e.display))))
@@ -740,7 +741,7 @@ function renderPlan() {
       toBuy.length
         ? h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: run(addPlanToShopping) }, `Lägg ${toBuy.length} på inköpslistan`))
         : null,
-    );
+    ));
   }
 }
 
