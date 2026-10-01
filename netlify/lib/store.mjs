@@ -67,4 +67,5 @@ export const KEYS = {
   inventory: "inventory",
   pending: "pending",
   articles: "articles",
+  shopping: "shopping",
 };

@@ -80,6 +80,8 @@ Statisk frontend plus Netlify Functions. **Ingen Supabase.**
 /api/suggest      POST { meals: [{ date, type, style, maxMinutes, people, creativity }] }
                   → matplan + inköpslista (se SPEC-matplan.md)
 /api/pending      GET förslag som väntar på bekräftelse
+/api/shopping     GET inköpslistan, POST lägg till (kontrolleras mot lagret),
+                  bocka av, ta bort
 ```
 
 **Lagring:** Netlify Blobs. Hela lagret ryms i ett JSON-dokument (~150 rader). Håll lagringen bakom ett tunt gränssnitt (`store.get()` / `store.put()`) så att den går att byta ut.

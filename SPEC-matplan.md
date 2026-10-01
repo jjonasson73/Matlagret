@@ -181,9 +181,9 @@ Reglerna gäller även nya rätter. Dessutom: en ny rätt får ha högst två va
 Inköpslistan är ett eget sparat dokument i Blobs, inte bara en vy av matplanen. Varor kommer från matplanens `missing`, från recept och från manuell inmatning.
 
 1. **Kontrollera mot lagret.** Finns varan redan, även i en annan zon, tas den bort och användaren får en rad om var den finns ("Finns: nötfärs, frys").
-2. **Överlagervarning.** Finns tre eller fler av samma `kind` (pasta, socker, bröd) läggs varan inte på listan utan en varning: "Du har redan 5 sorters pasta".
+2. **Överlagervarning.** Finns tre eller fler av samma `kind` (pasta, socker, bröd) läggs varan inte på listan utan en varning: "Du har redan 5 sorters pasta". Varningen och "finns redan" går att köra över med **Lägg till ändå**. En enda öppnad förpackning med ¼ kvar räknas som nästan slut och blockerar inte.
 3. **Slå ihop mängder.** 200 g + 300 g crème fraiche blir en rad.
-4. **Avrunda till förpackningsstorlek** med `packageSize` eller standardtabellen: 5 dl crème fraiche blir 2 × 2 dl.
+4. **Avrunda till förpackningsstorlek** med `packageSize` eller standardtabellen: 5 dl crème fraiche blir 2 × 3 dl. Vikt och volym räknas om med 1 dl ≈ 100 g.
 5. **Gruppera efter butikens avdelning** – frukt och grönt, mejeri, kött och fisk, skafferi, frys.
 6. **Bocka av.** Varor kan bockas av i butiken. När nästa kvitto läses in stryks de varor som köpts automatiskt.
 
