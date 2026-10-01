@@ -70,4 +70,6 @@ export const KEYS = {
   shopping: "shopping",
   plan: "plan",
   history: "history",
+  recipes: "recipes",
+  feedback: "feedback",
 };

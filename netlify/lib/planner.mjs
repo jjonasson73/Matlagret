@@ -4,6 +4,7 @@ import { loadInventory } from "./inventory.mjs";
 import { buildCandidates, validatePlan } from "./plan.mjs";
 import { planMeals } from "./claude.mjs";
 import { emptyList, addEntry, checkAgainstInventory, displayLine } from "./shopping.mjs";
+import { avoidList } from "./recipes.mjs";
 
 export const MAX_RETRIES = 2;
 
@@ -49,15 +50,16 @@ export async function runPlan({ now = new Date(), planner = planMeals } = {}) {
     const history = (await store.get(KEYS.history)) ?? [];
     const { candidates, basics } = buildCandidates(inventory, plan.order, { now });
     const recent = history.slice(-10);
+    const avoid = await avoidList();
 
-    let meals = alignMeals(plan.order, (await planner({ order: plan.order, candidates, basics, history: recent })).meals);
+    let meals = alignMeals(plan.order, (await planner({ order: plan.order, candidates, basics, history: recent, avoid })).meals);
     let check = validatePlan(meals, plan.order, candidates, { history, now });
 
     for (let round = 0; round < MAX_RETRIES && Object.keys(check.bySlot).length; round++) {
       const redo = plan.order.filter((o) => check.bySlot[o.slot]);
       const fixed = meals.filter((m) => !check.bySlot[m.slot]);
       console.log(`Omförsök ${round + 1}:`, JSON.stringify(check.bySlot));
-      const fresh = (await planner({ order: redo, candidates, basics, history: recent, fixed, hints: check.hints })).meals;
+      const fresh = (await planner({ order: redo, candidates, basics, history: recent, fixed, hints: check.hints, avoid })).meals;
       const bySlot = new Map(alignMeals(redo, fresh).map((m) => [m.slot, m]));
       meals = meals.map((m) => bySlot.get(m.slot) ?? m);
       check = validatePlan(meals, plan.order, candidates, { history, now });

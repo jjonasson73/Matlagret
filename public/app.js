@@ -68,7 +68,7 @@ const run = (fn) => async (...args) => {
 
 // ---- State ----
 
-const state = { inventory: { items: [] }, pending: [], shopping: null, plan: null, order: null, editingOrder: false, view: "lager" };
+const state = { inventory: { items: [] }, pending: [], shopping: null, plan: null, recipes: [], recipePeople: {}, openRecipes: new Set(), order: null, editingOrder: false, view: "lager" };
 
 // Hämtar allt parallellt. Om ett anrop misslyckas visas resten ändå, och
 // meddelandet säger vad som inte gick att hämta.
@@ -78,6 +78,7 @@ async function refresh() {
     ["förslagen", "/api/pending", (d) => (state.pending = d.pending)],
     ["inköpslistan", "/api/shopping", (d) => (state.shopping = d)],
     ["matplanen", "/api/suggest", (d) => (state.plan = d)],
+    ["recepten", "/api/recipes", (d) => (state.recipes = d.recipes)],
   ];
   const results = await Promise.allSettled(parts.map(([, path]) => api(path)));
   const failed = [];
@@ -267,7 +268,9 @@ function renderPending() {
 
 function proposalCard(p) {
   const title =
-    p.source === "photo"
+    p.purpose === "recipe" || p.source === "recipe"
+      ? `📖 ${p.meta?.title ?? "Recept"}`
+      : p.source === "photo"
       ? `${p.meta?.photos > 1 ? `Skanning (${p.meta.photos} foton)` : "Foto"} · ${p.meta?.zone ?? ""}${p.meta?.scope === "full" ? " · hela zonen" : ""}`
       : p.meta?.store
         ? `${p.meta.store}${p.meta.date ? " · " + p.meta.date : ""}`
@@ -298,6 +301,17 @@ function proposalCard(p) {
       h("menu", {},
         h("button", { onclick: run(() => decide({ id: p.id, dismiss: true })) }, "Släng"),
         h("button", { class: "primary", onclick: run(() => decide({ id: p.id, retry: true })) }, "Försök igen"),
+      ),
+    );
+    return card;
+  }
+
+  if (p.source === "recipe") {
+    card.append(
+      h("p", { class: "muted" }, `Sparat bland recepten (originalet för ${p.meta.servings} portioner).`),
+      h("menu", {},
+        h("button", { onclick: run(() => decide({ id: p.id, dismiss: true })) }, "OK"),
+        h("button", { class: "primary", onclick: run(async () => { await decide({ id: p.id, dismiss: true }); showRecipe(p.meta.recipeId); }) }, "Visa receptet"),
       ),
     );
     return card;
@@ -452,10 +466,21 @@ $("#btn-paste").addEventListener("click", () => {
     if (dlg.returnValue !== "send" || !text) return;
     const form = new FormData();
     form.append("text", text);
+    form.append("type", dlg.querySelector('[name="type"]:checked').value);
     await send(form);
   });
   dlg.showModal();
 });
+
+$("#in-recipe").addEventListener("change", run(async (e) => {
+  const files = [...e.target.files].slice(0, 8);
+  e.target.value = "";
+  if (!files.length) return;
+  const form = new FormData();
+  for (const f of files) form.append("file", f.type.startsWith("image/") ? await shrink(f) : f, f.name);
+  form.append("type", "recipe");
+  await send(form);
+}));
 
 // Krymp bilder i webbläsaren innan uppladdning (servern krymper också).
 async function shrink(file, max = 1600) {
@@ -784,9 +809,110 @@ function mealCard(m, warnings) {
     m.pairings?.length
       ? h("details", { open: true }, h("summary", {}, "Varför det funkar"), h("ul", { class: "small" }, m.pairings.map((p) => h("li", {}, h("strong", {}, p.ingredients.join(" + ")), " – ", p.why))))
       : null,
-    h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: () => enterCook(m.slot) }, "👩‍🍳 Laga")),
+    h("div", { class: "toolbar" },
+      h("button", { class: "primary", onclick: () => enterCook(m.slot) }, "👩‍🍳 Laga"),
+      m.rating === 1
+        ? h("span", { class: "muted small" }, "👍 Sparad bland recepten")
+        : m.rating === -1
+          ? h("span", { class: "muted small" }, "👎 Undviks framöver")
+          : [
+              h("button", { class: "btn", title: "Spara receptet", onclick: run(() => rateMeal(m.slot, "like")) }, "👍"),
+              h("button", { class: "btn", title: "Föreslå inte liknande", onclick: run(() => rateMeal(m.slot, "dislike")) }, "👎"),
+            ],
+    ),
     h("details", {}, h("summary", {}, "Gör så här"), h("ol", { class: "small" }, m.steps.map((s) => h("li", {}, s)))),
   );
+}
+
+async function rateMeal(slot, action) {
+  const res = await api("/api/recipes", { method: "POST", body: { action, slot } });
+  state.plan = res.plan;
+  state.recipes = res.recipes;
+  renderPlan();
+  renderRecipes();
+  toast(action === "like" ? "Sparad bland recepten" : "Okej – liknande förslag undviks");
+}
+
+// ---- Sparade recept ----
+
+const SOURCE_ICON = { social: "📱", bok: "📖", text: "📝", länk: "🔗" };
+const peopleFor = (r) => state.recipePeople[r.id] ?? 4;
+
+// Skala en mängd till antal personer och avrunda begripligt.
+function scaled(i, r) {
+  if (i.qty == null) return null;
+  const q = (i.qty * peopleFor(r)) / (r.servings || 4);
+  return q >= 10 ? Math.round(q) : Math.round(q * 10) / 10;
+}
+
+const ingredientText = (i, r) => {
+  const q = scaled(i, r);
+  return q == null ? i.name : `${fmtQty(q)} ${i.unit} ${i.name}`.replace(/\s+/g, " ");
+};
+
+function renderRecipes() {
+  const root = $("#recipes");
+  const list = state.recipes ?? [];
+  root.replaceChildren(
+    h("div", {},
+      h("h2", { class: "zone" }, `Sparade recept${list.length ? ` (${list.length})` : ""}`),
+      list.length ? list.map(recipeCard) : h("p", { class: "muted small" }, "Spara rätter med 👍, eller skicka in en skärmdump eller text med 📖 Recept under Att bekräfta."),
+    ),
+  );
+}
+
+function recipeCard(r) {
+  const have = r.ingredients.filter((i) => i.have);
+  const buy = r.ingredients.filter((i) => !i.have);
+  const setPeople = (n) => {
+    state.recipePeople[r.id] = Math.max(1, Math.min(12, n));
+    renderRecipes();
+  };
+  return h(
+    "details",
+    { class: "proposal recipe", id: `recipe-${r.id}`, open: state.openRecipes.has(r.id), ontoggle: (e) => (e.target.open ? state.openRecipes.add(r.id) : state.openRecipes.delete(r.id)) },
+    h("summary", {},
+      h("strong", {}, r.title),
+      h("small", { class: "muted" }, " ", [r.source === "plan" ? "⭐ från planen" : SOURCE_ICON[r.sourceType] ?? "", r.minutes ? `${r.minutes} min` : null, `${have.length}/${r.ingredients.length} finns hemma`].filter(Boolean).join(" · ")),
+    ),
+    h("div", { class: "stepper" },
+      h("button", { class: "btn", onclick: () => setPeople(peopleFor(r) - 1), "aria-label": "Färre" }, "−"),
+      h("span", {}, `${peopleFor(r)} pers`),
+      h("button", { class: "btn", onclick: () => setPeople(peopleFor(r) + 1), "aria-label": "Fler" }, "+"),
+      r.servings !== peopleFor(r) ? h("small", { class: "muted" }, `originalet: ${r.servings} port.`) : null,
+    ),
+    have.length ? h("p", { class: "small" }, h("strong", {}, "Finns hemma: "), have.map((i) => `${ingredientText(i, r)} (${i.where[0]?.replace(/^.*\((.*)\)$/, "$1") ?? "hemma"})`).join(", ")) : null,
+    buy.length ? h("p", { class: "small" }, h("strong", {}, "Behöver köpas: "), buy.map((i) => ingredientText(i, r) + (i.confidence === "unsure" ? " (ungefär)" : "")).join(", ")) : h("p", { class: "small ok" }, "✓ Allt finns hemma"),
+    r.substitutions?.length ? h("p", { class: "small" }, h("strong", {}, "Byt: "), r.substitutions.map((s) => `${s.use} i stället för ${s.instead}`).join(", ")) : null,
+    r.sourceUrl ? h("p", { class: "small muted" }, "Källa: ", r.sourceUrl) : null,
+    h("div", { class: "toolbar" },
+      h("button", { class: "primary", onclick: () => enterCook(`r:${r.id}`) }, "👩‍🍳 Laga"),
+      buy.length ? h("button", { class: "btn", onclick: run(() => addRecipeToShopping(r, buy)) }, `Lägg ${buy.length} på listan`) : null,
+      h("button", { class: "btn", onclick: run(() => deleteRecipe(r)) }, "Ta bort"),
+    ),
+    h("details", {}, h("summary", {}, "Gör så här"), h("ol", { class: "small" }, r.steps.map((s) => h("li", {}, s)))),
+  );
+}
+
+async function addRecipeToShopping(r, buy) {
+  const items = buy.map((i) => ({ name: i.name, qty: scaled(i, r) ?? 1, unit: scaled(i, r) == null ? "st" : i.unit || "st" }));
+  const res = await api("/api/shopping", { method: "POST", body: { action: "addMany", items, source: "recipe" } });
+  state.shopping = res;
+  renderShopping();
+  toast(`La till ${res.added.length} på inköpslistan${res.skipped.length ? `, ${res.skipped.length} fanns redan` : ""}`);
+}
+
+async function deleteRecipe(r) {
+  if (!confirm(`Ta bort ${r.title}?`)) return;
+  state.recipes = (await api("/api/recipes", { method: "POST", body: { action: "delete", id: r.id } })).recipes;
+  renderRecipes();
+}
+
+function showRecipe(id) {
+  state.openRecipes.add(id);
+  show("matplan");
+  renderRecipes();
+  document.getElementById(`recipe-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function addPlanToShopping() {
@@ -840,7 +966,24 @@ const saveCook = () => {
   } catch {}
 };
 
-const cookMeal = () => state.plan?.meals?.find((m) => m.slot === cook.slot);
+// cook.slot är en plats i matplanen, eller "r:<id>" för ett sparat recept.
+function cookMeal() {
+  if (typeof cook.slot === "string" && cook.slot.startsWith("r:")) {
+    const r = state.recipes?.find((x) => x.id === cook.slot.slice(2));
+    if (!r) return null;
+    const amount = (i) => ({ name: i.name, qty: scaled(i, r), unit: i.unit });
+    return {
+      title: r.title,
+      people: peopleFor(r),
+      minutes: r.minutes ?? "?",
+      steps: r.steps,
+      substitutions: r.substitutions ?? [],
+      uses: r.ingredients.filter((i) => i.have).map(amount),
+      missing: r.ingredients.filter((i) => !i.have).map(amount),
+    };
+  }
+  return state.plan?.meals?.find((m) => m.slot === cook.slot);
+}
 
 // "låt koka 8–10 minuter" → 10. Bara minuter; sekunder och timmar är ovanliga i stegen.
 function stepMinutes(text) {
@@ -874,12 +1017,12 @@ function renderCook() {
   if (cook.slot == null) return;
   const m = cookMeal();
   if (!m) {
-    // Planen har bytts ut sedan lagaläget öppnades.
-    if (state.plan) exitCook();
+    // Planen eller receptet finns inte längre.
+    if (state.plan && state.recipes) exitCook();
     return;
   }
   $("#cook-title").textContent = m.title;
-  const amount = (x) => `${fmtQty(x.qty)} ${x.unit} ${x.name}`;
+  const amount = (x) => (x.qty == null ? x.name : `${fmtQty(x.qty)} ${x.unit} ${x.name}`);
   const ingredients = [...m.uses, ...m.missing];
   const current = m.steps.findIndex((_, i) => !cook.done.includes(i));
 
@@ -1040,6 +1183,7 @@ function render() {
   renderShopping();
   renderPlan();
   renderShopMode();
+  renderRecipes();
   renderCook();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;

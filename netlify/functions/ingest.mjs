@@ -3,6 +3,8 @@
 // Flera "file" med bilder = en skanning av zonen (upp till MAX_PHOTOS foton).
 // scope: "part" (standard) = bara det som syns räknas, "full" = det som inte syns
 // föreslås som troligen slut.
+// type: "recipe" (formulärfält eller ?type=recipe) = skärmdump, foto eller text
+// med ett recept som ska sparas i receptbanken i stället för att ändra lagret.
 // Själva tolkningen sker i process-background så att svaret kommer direkt.
 import { uploads } from "../lib/store.mjs";
 import { json, error, checkKey, newId, safe } from "../lib/http.mjs";
@@ -13,6 +15,7 @@ import { ZONES } from "../lib/rules.mjs";
 const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_PHOTOS = 8;
 const SCOPES = ["part", "full"];
+const PURPOSES = ["auto", "recipe"];
 
 // Känn igen filen på innehållet först – genvägen skickar inte alltid rätt typ.
 export function sniff(data) {
@@ -41,6 +44,7 @@ async function readUpload(req) {
     const form = await req.formData();
     const zone = form.get("zone") || null;
     const scope = form.get("scope") || "part";
+    const purpose = form.get("type") || null;
     const [file, ...more] = form.getAll("file");
     if (file && typeof file === "object") {
       const data = Buffer.from(await file.arrayBuffer());
@@ -50,15 +54,15 @@ async function readUpload(req) {
         const d = Buffer.from(await f.arrayBuffer());
         extra.push({ data: d, mediaType: sniff(d) ?? f.type });
       }
-      return { data, mediaType: file.type || "application/octet-stream", filename: file.name || "fil", zone, scope, extra };
+      return { data, mediaType: file.type || "application/octet-stream", filename: file.name || "fil", zone, scope, purpose, extra };
     }
     const text = form.get("text") ?? (typeof file === "string" ? file : null);
-    if (text) return { data: Buffer.from(text), mediaType: "text/plain", filename: "kvitto.txt", zone, scope, extra: [] };
+    if (text) return { data: Buffer.from(text), mediaType: "text/plain", filename: "text.txt", zone, scope, purpose, extra: [] };
     return null;
   }
   const data = Buffer.from(await req.arrayBuffer());
   if (!data.length) return null;
-  return { data, mediaType: ct.split(";")[0] || "text/plain", filename: "fil", zone: null, scope: "part", extra: [] };
+  return { data, mediaType: ct.split(";")[0] || "text/plain", filename: "fil", zone: null, scope: "part", purpose: null, extra: [] };
 }
 
 export default safe("ingest", async (req, context) => {
@@ -68,6 +72,8 @@ export default safe("ingest", async (req, context) => {
 
   const upload = await readUpload(req);
   if (!upload) return error("Ingen fil eller text i anropet (fältnamn: file)");
+  upload.purpose ??= new URL(req.url).searchParams.get("type") || "auto";
+  if (!PURPOSES.includes(upload.purpose)) return error(`Okänd typ: ${upload.purpose}`);
   upload.mediaType = sniff(upload.data) ?? upload.mediaType;
   if (upload.mediaType === "text/plain" && looksLikeFilename(upload.data.toString("utf8"))) {
     return error(
@@ -84,7 +90,7 @@ export default safe("ingest", async (req, context) => {
     if (kind !== "image" || upload.extra.some((f) => !f.mediaType?.startsWith("image/"))) {
       return error("Flera filer i samma anrop går bara för foton");
     }
-    if (upload.extra.length + 1 > MAX_PHOTOS) return error(`Högst ${MAX_PHOTOS} foton per skanning`);
+    if (upload.extra.length + 1 > MAX_PHOTOS) return error(`Högst ${MAX_PHOTOS} foton per anrop`);
   }
 
   const id = newId();
@@ -94,6 +100,7 @@ export default safe("ingest", async (req, context) => {
     filename: upload.filename,
     zone: upload.zone,
     scope: upload.scope,
+    purpose: upload.purpose,
     count: upload.extra.length + 1,
   });
   for (const [i, f] of upload.extra.entries()) {
@@ -106,6 +113,7 @@ export default safe("ingest", async (req, context) => {
     createdAt: new Date().toISOString(),
     kind,
     filename: upload.filename,
+    purpose: upload.purpose,
     status: "queued",
     lines: [],
   });

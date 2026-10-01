@@ -42,6 +42,8 @@ så att de gula och röda raderna syns i lagervyn tills någon har tittat på de
 3. Deploya. Netlify Blobs behöver ingen egen konfiguration.
 4. Öppna siten i Safari → Dela → Lägg till på hemskärmen. Ange `INGEST_KEY` under ⚙︎ första gången.
 5. I iOS-genvägen: sätt URL till `https://<din-site>.netlify.app/api/ingest` och `x-api-key` till samma `INGEST_KEY`.
+6. Valfritt: duplicera genvägen, döp kopian till "Spara recept" och lägg till `?type=recipe` sist i URL:en.
+   Då hamnar skärmdumpar från TikTok/Instagram bland recepten i stället för att tolkas som foton av kylen.
 
 Bakgrundsfunktionen (`process-background`) behövs eftersom en tolkning kan ta längre tid än
 den vanliga funktionsgränsen. Kontrollera att din Netlify-plan har stöd för Background Functions.
@@ -72,5 +74,7 @@ curl -H "x-api-key: $INGEST_KEY" -F file=@testdata/kvitto.pdf "http://localhost:
   - [x] 2–3. Kandidatlista, generering i bakgrunden, regelkontroll med omförsök, vyn Matplan
   - [~] 5. Kreativt läge: "✨ Ny rätt" per måltid med "Varför det funkar" (Överraska mig och tumme upp/ned saknas)
   - [ ] 4. Lås och regenerera per måltid, markera som lagad, upptiningsbanderoll
-  - [ ] 6–7. Receptinläsning och sparade recept
+  - [x] 6. Receptinläsning från skärmdump, foto, PDF och text (`/api/ingest?type=recipe`), receptbank med skalning och var ingredienserna finns
+  - [~] 7. 👍 sparar rätter som recept, 👎 undviks i planeringen; sparade recept som kandidater i planen saknas
+  - [x] Handlaläge och lagaläge (helskärm, tänd skärm, timers)
 - [x] Steg 5: nattligt åldringsjobb och överlagervarning
