@@ -252,6 +252,7 @@ Regler:
 - substitutions: när något i lagret kan ersätta en vanlig ingrediens i rätten ("crème fraiche i stället för grädde").
 - steps: 4–8 korta steg på svenska.
 - type dessert eller fredagsmys: söta rätter eller mys, inte middag.
+- inköp: "inga – bara det som finns" betyder att missing måste vara tom; anpassa rätten efter lagret hellre än tvärtom (byt ingrediens, använd substitutions). "högst 3 varor" betyder högst tre poster i missing. "fritt" betyder att inköp är okej om rätten blir bättre.
 
 creativity:
 - "känd": en etablerad rätt i vald stil (pad thai, köttfärssås, tacos, pytt i panna). pairings tom, balance null.
@@ -276,6 +277,7 @@ function orderLine(o) {
     `max ${o.maxMinutes ?? "fritt"} min`,
     `${o.people} personer`,
     `creativity ${o.creativity}`,
+    `inköp ${{ hemma: "inga – bara det som finns", få: "högst 3 varor", fritt: "fritt" }[o.shopping ?? "få"]}`,
     o.anchors?.length ? `ankare: ${o.anchors.join(", ")}` : null,
   ].filter(Boolean).join(", ");
 }

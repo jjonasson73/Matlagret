@@ -67,6 +67,12 @@
     <section id="view-matplan" class="view" hidden>
       <div id="plan-order" hidden>
         <p class="hint">Beställ de måltider du ska laga. Planen utgår från det som snart blir dåligt och det som redan är öppnat.</p>
+        <div class="segmented" id="order-shopping" role="radiogroup" aria-label="Inköp">
+          <span class="seg-label">Inköp</span>
+          <button type="button" data-v="hemma">🏠 Bara hemma</button>
+          <button type="button" data-v="få">Få inköp</button>
+          <button type="button" data-v="fritt">Gärna inköp</button>
+        </div>
         <div id="order-rows"></div>
         <div class="toolbar">
           <button id="order-add" class="btn">+ Måltid</button>

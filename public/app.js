@@ -701,13 +701,22 @@ function renderPlan() {
   const plan = state.plan ?? { status: "empty" };
   const editing = state.editingOrder || plan.status === "empty";
   if (editing && !state.order) {
+    state.orderShopping = plan.order?.[0]?.shopping ?? "få";
     state.order = plan.order?.length
       ? plan.order.map((o) => ({ ...o, maxMinutes: o.maxMinutes == null ? "fritt" : String(o.maxMinutes) }))
       : defaultOrder();
   }
   $("#plan-order").hidden = !editing;
   $("#order-cancel").hidden = plan.status === "empty";
-  if (editing) $("#order-rows").replaceChildren(...state.order.map(orderRow));
+  if (editing) {
+    $("#order-rows").replaceChildren(...state.order.map(orderRow));
+    for (const b of document.querySelectorAll("#order-shopping button")) {
+      const on = b.dataset.v === state.orderShopping;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", String(on));
+      b.setAttribute("role", "radio");
+    }
+  }
 
   const status = $("#plan-status");
   const meals = $("#plan-meals");
@@ -731,7 +740,8 @@ function renderPlan() {
 
   const { toBuy = [], atHome = [] } = plan.shopping ?? {};
   if (toBuy.length || atHome.length) {
-    shop.append(
+    // Genom h() så att tomma delar (null) hoppas över i stället för att skrivas ut.
+    shop.append(h("div", {},
       h("h2", { class: "zone" }, "Att köpa"),
       toBuy.length
         ? h("ul", { class: "items" }, toBuy.map((e) => h("li", { class: "item" }, h("span", { class: "name" }, e.display))))
@@ -740,7 +750,7 @@ function renderPlan() {
       toBuy.length
         ? h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: run(addPlanToShopping) }, `Lägg ${toBuy.length} på inköpslistan`))
         : null,
-    );
+    ));
   }
 }
 
@@ -751,7 +761,7 @@ function mealCard(m, warnings) {
     "article",
     { class: "proposal meal" },
     h("header", {}, h("h3", {}, m.title), h("span", { class: "muted" }, dayLabel(m.date))),
-    h("p", { class: "muted small" }, [m.type, m.style, `${m.minutes} min`, `${m.people} pers`, m.creativity === "ny" ? "✨ ny rätt" : null].filter(Boolean).join(" · ")),
+    h("p", { class: "muted small" }, [m.type, m.style, `${m.minutes} min`, `${m.people} pers`, m.creativity === "ny" ? "✨ ny rätt" : null, m.shopping === "hemma" ? "🏠 bara hemma" : null].filter(Boolean).join(" · ")),
     warnings?.length ? h("p", { class: "error small" }, "⚠ ", warnings.join("; ")) : null,
     m.thawAhead.length ? h("p", { class: "thaw" }, "🧊 Ta fram ", list(m.thawAhead, (t) => t.name), " dagen före") : null,
     m.uses.length ? h("p", { class: "small" }, h("strong", {}, "Använder: "), list(m.uses, amount)) : null,
@@ -772,6 +782,13 @@ async function addPlanToShopping() {
   toast(`La till ${res.added.length} på inköpslistan${res.skipped.length ? `, ${res.skipped.length} fanns redan` : ""}`);
 }
 
+for (const b of document.querySelectorAll("#order-shopping button")) {
+  b.addEventListener("click", () => {
+    state.orderShopping = b.dataset.v;
+    renderPlan();
+  });
+}
+
 $("#order-add").addEventListener("click", () => {
   const last = state.order.at(-1);
   state.order.push({ ...(last ?? defaultOrder()[0]), date: last ? addDays(last.date, 1) : isoDate(new Date()), creativity: "känd" });
@@ -786,7 +803,7 @@ $("#order-cancel").addEventListener("click", () => {
 
 $("#order-go").addEventListener("click", run(async () => {
   if (!state.order.length) return toast("Lägg till minst en måltid");
-  const meals = state.order.map((m) => ({ ...m, people: Number(m.people) }));
+  const meals = state.order.map((m) => ({ ...m, people: Number(m.people), shopping: state.orderShopping }));
   state.plan = await api("/api/suggest", { method: "POST", body: { meals } });
   state.editingOrder = false;
   state.order = null;
