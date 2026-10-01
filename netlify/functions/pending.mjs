@@ -6,7 +6,7 @@
 //   { id, dismiss: true }     släng hela förslaget
 //   { id, retry: true }       tolka om (efter fel)
 import { store, KEYS } from "../lib/store.mjs";
-import { json, error, checkKey } from "../lib/http.mjs";
+import { json, error, checkKey, safe } from "../lib/http.mjs";
 import { loadInventory, saveInventory } from "../lib/inventory.mjs";
 import { loadPending, savePending, applyLine, isFinished } from "../lib/pending.mjs";
 import { applyZoneRules } from "../lib/rules.mjs";
@@ -15,7 +15,7 @@ import { emptyList, strikeBought } from "../lib/shopping.mjs";
 
 const LINE_EDITS = ["name", "category", "zone", "qty", "unit", "bestBefore", "styles", "role", "kind"];
 
-export default async (req) => {
+export default safe("pending", async (req) => {
   const denied = checkKey(req);
   if (denied) return denied;
 
@@ -103,6 +103,6 @@ export default async (req) => {
     }
   }
   return json({ ok: true, proposal: p, inventory: inv });
-};
+});
 
 export const config = { path: "/api/pending" };

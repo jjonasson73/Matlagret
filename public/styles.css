@@ -153,3 +153,22 @@ dialog .hint { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
 .item.shop .name { flex: 1; display: flex; flex-direction: column; }
 .item.shop.checked .name { text-decoration: line-through; opacity: .5; }
 .shop-actions { margin-top: 16px; }
+
+.order-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; margin-bottom: 8px; }
+.order-row input, .order-row select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 36px; background: var(--bg); }
+.order-row .people input { width: 52px; }
+.order-row label { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; }
+.order-row .quick { margin-left: auto; }
+.meal h3 { margin: 0; }
+.small { font-size: 14px; }
+p.small { margin: 6px 0; }
+.ok { color: var(--sure); }
+.thaw { background: var(--bg); border-radius: 8px; padding: 6px 8px; font-size: 14px; }
+.meal details { margin-top: 6px; }
+.meal ol, .meal ul.small { padding-left: 20px; margin: 6px 0; }
+.hint { font-size: 14px; color: var(--muted); }
+
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+dialog .suggest { margin: -4px 0 10px; }
+.chip.suggestion { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; font-size: 15px; min-height: 36px; background: var(--card); }
+.chip.suggestion small { color: var(--muted); font-size: 12px; }

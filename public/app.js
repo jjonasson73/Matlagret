@@ -1,4 +1,5 @@
 // Matlagret – enkel PWA utan ramverk.
+import { GROCERIES } from "/groceries.js";
 
 const ZONES = [
   ["kyl", "Kyl"],
@@ -54,7 +55,7 @@ function toast(msg) {
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => (t.hidden = true), 3000);
+  toast.timer = setTimeout(() => (t.hidden = true), msg.length > 60 ? 8000 : 3000);
 }
 
 const run = (fn) => async (...args) => {
@@ -67,14 +68,25 @@ const run = (fn) => async (...args) => {
 
 // ---- State ----
 
-const state = { inventory: { items: [] }, pending: [], shopping: null, view: "lager" };
+const state = { inventory: { items: [] }, pending: [], shopping: null, plan: null, order: null, editingOrder: false, view: "lager" };
 
+// Hämtar allt parallellt. Om ett anrop misslyckas visas resten ändå, och
+// meddelandet säger vad som inte gick att hämta.
 async function refresh() {
-  const [inv, pen, shop] = await Promise.all([api("/api/inventory"), api("/api/pending"), api("/api/shopping")]);
-  state.inventory = inv;
-  state.pending = pen.pending;
-  state.shopping = shop;
+  const parts = [
+    ["lagret", "/api/inventory", (d) => (state.inventory = d)],
+    ["förslagen", "/api/pending", (d) => (state.pending = d.pending)],
+    ["inköpslistan", "/api/shopping", (d) => (state.shopping = d)],
+    ["matplanen", "/api/suggest", (d) => (state.plan = d)],
+  ];
+  const results = await Promise.allSettled(parts.map(([, path]) => api(path)));
+  const failed = [];
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") parts[i][2](r.value);
+    else failed.push(`${parts[i][0]} (${r.reason.message})`);
+  });
   render();
+  if (failed.length) throw new Error(`Kunde inte hämta ${failed.join(", ")}`);
 }
 
 // ---- Lager ----
@@ -497,6 +509,7 @@ function shopRow(e) {
 async function shopAction(body) {
   state.shopping = await api("/api/shopping", { method: "POST", body });
   renderShopping();
+  renderPlan();
   return state.shopping;
 }
 
@@ -556,18 +569,222 @@ $("#shop-share").addEventListener("click", run(async () => {
 
 $("#shop-clear").addEventListener("click", run(async () => shopAction({ action: "clearChecked" })));
 
+// ---- Matplan ----
+
+const MEAL_TYPES = ["middag", "lunch", "matlåda", "dessert", "fredagsmys"];
+const MEAL_STYLES = ["vardagsmat", "asiatiskt", "italienskt", "husman", "mexikanskt", "fritt"];
+const MINUTES = [["20", "20 min"], ["30", "30 min"], ["45", "45 min"], ["fritt", "Ingen gräns"]];
+
+const isoDate = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const addDays = (iso, n) => {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return isoDate(d);
+};
+const dayLabel = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" });
+
+function defaultOrder() {
+  const today = isoDate(new Date());
+  return [0, 1, 2].map((n) => ({ date: addDays(today, n), type: "middag", style: "vardagsmat", maxMinutes: "30", people: 4, creativity: "känd" }));
+}
+
+function select(options, value, onchange) {
+  return h("select", { onchange }, options.map(([v, label]) => h("option", { value: v, selected: String(value) === v }, label)));
+}
+
+function orderRow(m, i) {
+  const set = (k) => (e) => {
+    m[k] = e.target.type === "checkbox" ? (e.target.checked ? "ny" : "känd") : e.target.value;
+  };
+  return h(
+    "div",
+    { class: "order-row" },
+    h("input", { type: "date", value: m.date, onchange: set("date"), "aria-label": "Dag" }),
+    select(MEAL_TYPES.map((t) => [t, t]), m.type, set("type")),
+    select(MEAL_STYLES.map((s) => [s, s]), m.style, set("style")),
+    select(MINUTES, m.maxMinutes ?? "fritt", set("maxMinutes")),
+    h("label", { class: "people" }, h("input", { type: "number", min: 1, max: 12, value: m.people, onchange: set("people") }), " pers"),
+    h("label", { class: "creative" }, h("input", { type: "checkbox", checked: m.creativity === "ny", onchange: set("creativity") }), " ✨ Ny rätt"),
+    h("button", { class: "quick no", "aria-label": "Ta bort måltid", onclick: () => { state.order.splice(i, 1); renderPlan(); } }, "✕"),
+  );
+}
+
+function renderPlan() {
+  const plan = state.plan ?? { status: "empty" };
+  const editing = state.editingOrder || plan.status === "empty";
+  if (editing && !state.order) {
+    state.order = plan.order?.length
+      ? plan.order.map((o) => ({ ...o, maxMinutes: o.maxMinutes == null ? "fritt" : String(o.maxMinutes) }))
+      : defaultOrder();
+  }
+  $("#plan-order").hidden = !editing;
+  $("#order-cancel").hidden = plan.status === "empty";
+  if (editing) $("#order-rows").replaceChildren(...state.order.map(orderRow));
+
+  const status = $("#plan-status");
+  const meals = $("#plan-meals");
+  const shop = $("#plan-shopping");
+  status.replaceChildren();
+  meals.replaceChildren();
+  shop.replaceChildren();
+  if (editing) return;
+
+  if (plan.status === "planning") {
+    status.append(h("p", { class: "muted" }, h("span", { class: "spinner" }), " Planerar… det tar 30–60 sekunder."));
+    return;
+  }
+  const newPlan = h("button", { class: "btn", onclick: () => { state.editingOrder = true; state.order = null; renderPlan(); } }, "Ny plan");
+  if (plan.status === "error") {
+    status.append(h("p", { class: "error" }, plan.error ?? "Planeringen misslyckades"), h("div", { class: "toolbar" }, newPlan));
+    return;
+  }
+  status.append(h("div", { class: "toolbar" }, newPlan));
+  meals.append(...[...plan.meals].sort((a, b) => a.date.localeCompare(b.date)).map((m) => mealCard(m, plan.warnings?.[m.slot])));
+
+  const { toBuy = [], atHome = [] } = plan.shopping ?? {};
+  if (toBuy.length || atHome.length) {
+    shop.append(
+      h("h2", { class: "zone" }, "Att köpa"),
+      toBuy.length
+        ? h("ul", { class: "items" }, toBuy.map((e) => h("li", { class: "item" }, h("span", { class: "name" }, e.display))))
+        : h("p", { class: "muted" }, "Inget – allt finns hemma."),
+      atHome.length ? h("p", { class: "muted small" }, "Finns hemma: ", atHome.map((e) => `${e.name} (${e.found.join(", ")})`).join("; ")) : null,
+      toBuy.length
+        ? h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: run(addPlanToShopping) }, `Lägg ${toBuy.length} på inköpslistan`))
+        : null,
+    );
+  }
+}
+
+function mealCard(m, warnings) {
+  const list = (items, fmt) => items.map(fmt).join(", ");
+  const amount = (x) => `${x.name} ${fmtQty(x.qty)} ${x.unit}`;
+  return h(
+    "article",
+    { class: "proposal meal" },
+    h("header", {}, h("h3", {}, m.title), h("span", { class: "muted" }, dayLabel(m.date))),
+    h("p", { class: "muted small" }, [m.type, m.style, `${m.minutes} min`, `${m.people} pers`, m.creativity === "ny" ? "✨ ny rätt" : null].filter(Boolean).join(" · ")),
+    warnings?.length ? h("p", { class: "error small" }, "⚠ ", warnings.join("; ")) : null,
+    m.thawAhead.length ? h("p", { class: "thaw" }, "🧊 Ta fram ", list(m.thawAhead, (t) => t.name), " dagen före") : null,
+    m.uses.length ? h("p", { class: "small" }, h("strong", {}, "Använder: "), list(m.uses, amount)) : null,
+    m.missing.length ? h("p", { class: "small" }, h("strong", {}, "Köp: "), list(m.missing, amount)) : h("p", { class: "small ok" }, "✓ Allt finns hemma"),
+    m.substitutions.length ? h("p", { class: "small" }, h("strong", {}, "Byt: "), list(m.substitutions, (s) => `${s.use} i stället för ${s.instead}`)) : null,
+    m.pairings?.length
+      ? h("details", { open: true }, h("summary", {}, "Varför det funkar"), h("ul", { class: "small" }, m.pairings.map((p) => h("li", {}, h("strong", {}, p.ingredients.join(" + ")), " – ", p.why))))
+      : null,
+    h("details", {}, h("summary", {}, "Gör så här"), h("ol", { class: "small" }, m.steps.map((s) => h("li", {}, s)))),
+  );
+}
+
+async function addPlanToShopping() {
+  const res = await api("/api/shopping", { method: "POST", body: { action: "addMany", items: state.plan.shopping.toBuy, source: "meal" } });
+  state.shopping = res;
+  renderShopping();
+  renderPlan();
+  toast(`La till ${res.added.length} på inköpslistan${res.skipped.length ? `, ${res.skipped.length} fanns redan` : ""}`);
+}
+
+$("#order-add").addEventListener("click", () => {
+  const last = state.order.at(-1);
+  state.order.push({ ...(last ?? defaultOrder()[0]), date: last ? addDays(last.date, 1) : isoDate(new Date()), creativity: "känd" });
+  renderPlan();
+});
+
+$("#order-cancel").addEventListener("click", () => {
+  state.editingOrder = false;
+  state.order = null;
+  renderPlan();
+});
+
+$("#order-go").addEventListener("click", run(async () => {
+  if (!state.order.length) return toast("Lägg till minst en måltid");
+  const meals = state.order.map((m) => ({ ...m, people: Number(m.people) }));
+  state.plan = await api("/api/suggest", { method: "POST", body: { meals } });
+  state.editingOrder = false;
+  state.order = null;
+  render();
+}));
+
+// ---- Förslag medan man skriver ----
+
+const normText = (s) => s.toLowerCase().replace(/[éèê]/g, "e").replace(/ô/g, "o");
+const QTY_PREFIX = /^(\d+(?:[.,]\d+)?\s*(?:g|kg|hg|dl|cl|ml|l|st|förp|paket|burk|påse)?\.?\s+)(.*)$/i;
+
+// Förslag i ordning: det som finns hemma, det som redan står på listan, vanliga
+// matvaror. Träff i början av namnet före träff inuti ("färs" hittar nötfärs).
+function suggestionsFor(query) {
+  const q = normText(query.trim());
+  if (q.length < 2) return [];
+  const found = new Map();
+  const consider = (name, hint, rank) => {
+    const n = normText(name);
+    const at = n.indexOf(q);
+    if (at < 0 || n === q) return;
+    const score = rank * 10 + (at === 0 ? 0 : n[at - 1] === " " ? 1 : 2);
+    const prev = found.get(n);
+    if (!prev || score < prev.score) found.set(n, { name, hint, score });
+  };
+  for (const i of state.inventory.items) {
+    if (i.status === "out") consider(i.name, "slut hemma", 3);
+    else consider(i.name, `hemma · ${(ZONE_LABEL[i.zone] ?? i.zone).toLowerCase()}`, 0);
+  }
+  for (const e of state.shopping?.list.items ?? []) if (!e.checked) consider(e.name, "på listan", 1);
+  for (const g of GROCERIES) consider(g, null, 4);
+  return [...found.values()].sort((a, b) => a.score - b.score || a.name.length - b.name.length).slice(0, 6);
+}
+
+function attachTypeahead(input, box) {
+  const hide = () => (box.hidden = true);
+  const show = () => {
+    const m = input.value.match(QTY_PREFIX);
+    const prefix = m ? m[1] : "";
+    const list = suggestionsFor(m ? m[2] : input.value);
+    box.hidden = !list.length;
+    box.replaceChildren(
+      ...list.map((s) =>
+        h(
+          "button",
+          {
+            type: "button",
+            class: "chip suggestion",
+            // pointerdown så att valet hinner före blur på fältet
+            onpointerdown: (e) => {
+              e.preventDefault();
+              input.value = prefix + s.name;
+              hide();
+              input.focus();
+            },
+          },
+          s.name,
+          s.hint ? h("small", {}, s.hint) : null,
+        ),
+      ),
+    );
+  };
+  input.addEventListener("input", show);
+  input.addEventListener("focus", show);
+  input.addEventListener("blur", () => setTimeout(hide, 150));
+  input.addEventListener("keydown", (e) => e.key === "Escape" && hide());
+  return hide;
+}
+
+const hideShopSuggest = attachTypeahead($("#shop-input"), $("#shop-suggest"));
+$("#shop-form").addEventListener("submit", hideShopSuggest);
+attachTypeahead($('#form-item [name="name"]'), $("#name-suggest"));
+
 // ---- Navigering & inställningar ----
 
 function render() {
   renderInventory();
   renderPending();
   renderShopping();
+  renderPlan();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;
   $("#badge").textContent = String(n);
   // Fråga igen om något fortfarande tolkas.
   clearTimeout(render.poll);
-  if (state.pending.some((p) => p.status === "queued" || p.status === "processing")) {
+  if (state.plan?.status === "planning" || state.pending.some((p) => p.status === "queued" || p.status === "processing")) {
     render.poll = setTimeout(run(refresh), 4000);
   }
 }

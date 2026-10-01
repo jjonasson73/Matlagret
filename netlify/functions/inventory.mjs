@@ -8,12 +8,12 @@
 //   { action: "delete", id }
 //   { action: "tagAll" }            tagga poster som saknar role (bakgrund)
 import { store, KEYS } from "../lib/store.mjs";
-import { json, error, checkKey } from "../lib/http.mjs";
+import { json, error, checkKey, safe } from "../lib/http.mjs";
 import { loadInventory, saveInventory, addOrMerge, findItem, updateItem, setOpened } from "../lib/inventory.mjs";
 import { CATEGORIES, ZONES, articleFields } from "../lib/rules.mjs";
 import { triggerBackground } from "../lib/process.mjs";
 
-export default async (req) => {
+export default safe("inventory", async (req) => {
   const denied = checkKey(req);
   if (denied) return denied;
 
@@ -80,6 +80,6 @@ export default async (req) => {
   }
   await saveInventory(inv);
   return json({ ok: true, inventory: inv });
-};
+});
 
 export const config = { path: "/api/inventory" };

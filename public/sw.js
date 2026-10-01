@@ -1,6 +1,6 @@
 // Enkel service worker: appskalet cachas, /api går alltid mot nätet.
-const CACHE = "matlagret-v1";
-const SHELL = ["/", "/index.html", "/app.js", "/styles.css", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "matlagret-v2";
+const SHELL = ["/", "/index.html", "/app.js", "/groceries.js", "/styles.css", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
