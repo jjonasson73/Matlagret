@@ -167,3 +167,8 @@ p.small { margin: 6px 0; }
 .meal details { margin-top: 6px; }
 .meal ol, .meal ul.small { padding-left: 20px; margin: 6px 0; }
 .hint { font-size: 14px; color: var(--muted); }
+
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+dialog .suggest { margin: -4px 0 10px; }
+.chip.suggestion { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; font-size: 15px; min-height: 36px; background: var(--card); }
+.chip.suggestion small { color: var(--muted); font-size: 12px; }

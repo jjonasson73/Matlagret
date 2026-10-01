@@ -1,4 +1,5 @@
 // Matlagret – enkel PWA utan ramverk.
+import { GROCERIES } from "/groceries.js";
 
 const ZONES = [
   ["kyl", "Kyl"],
@@ -693,6 +694,73 @@ $("#order-go").addEventListener("click", run(async () => {
   state.order = null;
   render();
 }));
+
+// ---- Förslag medan man skriver ----
+
+const normText = (s) => s.toLowerCase().replace(/[éèê]/g, "e").replace(/ô/g, "o");
+const QTY_PREFIX = /^(\d+(?:[.,]\d+)?\s*(?:g|kg|hg|dl|cl|ml|l|st|förp|paket|burk|påse)?\.?\s+)(.*)$/i;
+
+// Förslag i ordning: det som finns hemma, det som redan står på listan, vanliga
+// matvaror. Träff i början av namnet före träff inuti ("färs" hittar nötfärs).
+function suggestionsFor(query) {
+  const q = normText(query.trim());
+  if (q.length < 2) return [];
+  const found = new Map();
+  const consider = (name, hint, rank) => {
+    const n = normText(name);
+    const at = n.indexOf(q);
+    if (at < 0 || n === q) return;
+    const score = rank * 10 + (at === 0 ? 0 : n[at - 1] === " " ? 1 : 2);
+    const prev = found.get(n);
+    if (!prev || score < prev.score) found.set(n, { name, hint, score });
+  };
+  for (const i of state.inventory.items) {
+    if (i.status === "out") consider(i.name, "slut hemma", 3);
+    else consider(i.name, `hemma · ${(ZONE_LABEL[i.zone] ?? i.zone).toLowerCase()}`, 0);
+  }
+  for (const e of state.shopping?.list.items ?? []) if (!e.checked) consider(e.name, "på listan", 1);
+  for (const g of GROCERIES) consider(g, null, 4);
+  return [...found.values()].sort((a, b) => a.score - b.score || a.name.length - b.name.length).slice(0, 6);
+}
+
+function attachTypeahead(input, box) {
+  const hide = () => (box.hidden = true);
+  const show = () => {
+    const m = input.value.match(QTY_PREFIX);
+    const prefix = m ? m[1] : "";
+    const list = suggestionsFor(m ? m[2] : input.value);
+    box.hidden = !list.length;
+    box.replaceChildren(
+      ...list.map((s) =>
+        h(
+          "button",
+          {
+            type: "button",
+            class: "chip suggestion",
+            // pointerdown så att valet hinner före blur på fältet
+            onpointerdown: (e) => {
+              e.preventDefault();
+              input.value = prefix + s.name;
+              hide();
+              input.focus();
+            },
+          },
+          s.name,
+          s.hint ? h("small", {}, s.hint) : null,
+        ),
+      ),
+    );
+  };
+  input.addEventListener("input", show);
+  input.addEventListener("focus", show);
+  input.addEventListener("blur", () => setTimeout(hide, 150));
+  input.addEventListener("keydown", (e) => e.key === "Escape" && hide());
+  return hide;
+}
+
+const hideShopSuggest = attachTypeahead($("#shop-input"), $("#shop-suggest"));
+$("#shop-form").addEventListener("submit", hideShopSuggest);
+attachTypeahead($('#form-item [name="name"]'), $("#name-suggest"));
 
 // ---- Navigering & inställningar ----
 
