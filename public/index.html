@@ -94,7 +94,8 @@
       </div>
       <div id="shop-list"></div>
       <div class="toolbar shop-actions">
-        <button id="shop-copy" class="primary">📋 Kopiera</button>
+        <button id="shop-go" class="primary">🛒 Handla</button>
+        <button id="shop-copy" class="btn">📋 Kopiera</button>
         <button id="shop-share" class="btn">Dela</button>
         <button id="shop-clear" class="btn">Rensa avbockade</button>
       </div>
@@ -202,6 +203,14 @@
       </menu>
     </form>
   </dialog>
+
+  <div id="shop-mode" class="shop-mode" hidden>
+    <header>
+      <div><strong>Handla</strong> <span id="shop-mode-count" class="muted"></span></div>
+      <button id="shop-mode-done" class="primary">Klar</button>
+    </header>
+    <div id="shop-mode-list"></div>
+  </div>
 
   <div id="toast" hidden></div>
   <script type="module" src="/app.js"></script>

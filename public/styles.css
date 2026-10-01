@@ -172,3 +172,15 @@ p.small { margin: 6px 0; }
 dialog .suggest { margin: -4px 0 10px; }
 .chip.suggestion { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; font-size: 15px; min-height: 36px; background: var(--card); }
 .chip.suggestion small { color: var(--muted); font-size: 12px; }
+
+.shop-mode { position: fixed; inset: 0; z-index: 4; background: var(--bg); overflow-y: auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+.shop-mode header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 0 10px; background: var(--bg); font-size: 20px; z-index: 1; }
+.shop-mode h2.zone { margin: 18px 0 6px; }
+.shop-big { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 60px; padding: 12px 14px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-size: 20px; text-align: left; }
+.shop-big .tick { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--accent); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-text); font-size: 18px; font-weight: bold; }
+.shop-big.checked { opacity: .5; }
+.shop-big.checked .tick { background: var(--accent); }
+.shop-big.checked .what { text-decoration: line-through; }
+.shop-big .what { display: flex; flex-direction: column; }
+.shop-big small { font-size: 13px; color: var(--muted); }
+body.no-scroll { overflow: hidden; }

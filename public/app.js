@@ -506,10 +506,98 @@ function shopRow(e) {
   );
 }
 
+// ---- Handlaläge ----
+// Helskärm med stora rader för butiken. Avbockning syns direkt och skickas i
+// bakgrunden; bara det senaste svaret från servern får skriva över listan.
+
+const shopMode = { on: false, wakeLock: null, seq: 0 };
+
+const remember = (on) => {
+  try {
+    on ? localStorage.setItem("matlagret.shopmode", "1") : localStorage.removeItem("matlagret.shopmode");
+  } catch {}
+};
+
+async function keepAwake() {
+  try {
+    if (shopMode.on && navigator.wakeLock && document.visibilityState === "visible" && !shopMode.wakeLock) {
+      shopMode.wakeLock = await navigator.wakeLock.request("screen");
+      shopMode.wakeLock.addEventListener("release", () => (shopMode.wakeLock = null));
+    }
+  } catch {
+    // Stöds inte på alla iOS-versioner – då släcks skärmen som vanligt.
+  }
+}
+
+function enterShopMode() {
+  shopMode.on = true;
+  remember(true);
+  $("#shop-mode").hidden = false;
+  document.body.classList.add("no-scroll");
+  renderShopMode();
+  keepAwake();
+}
+
+function exitShopMode() {
+  shopMode.on = false;
+  remember(false);
+  $("#shop-mode").hidden = true;
+  document.body.classList.remove("no-scroll");
+  shopMode.wakeLock?.release().catch(() => {});
+  shopMode.wakeLock = null;
+  renderShopping();
+}
+
+function renderShopMode() {
+  if (!shopMode.on) return;
+  const items = state.shopping?.list.items ?? [];
+  const left = items.filter((e) => !e.checked);
+  const done = items.filter((e) => e.checked);
+  $("#shop-mode-count").textContent = left.length ? `· ${left.length} kvar` : "· allt i korgen 🎉";
+  const root = $("#shop-mode-list");
+  root.replaceChildren();
+  for (const section of state.shopping?.sections ?? []) {
+    const rows = left.filter((e) => e.section === section);
+    if (rows.length) root.append(h("h2", { class: "zone" }, section), ...rows.map(bigRow));
+  }
+  if (done.length) root.append(h("h2", { class: "zone" }, `I korgen (${done.length})`), ...done.map(bigRow));
+}
+
+function bigRow(e) {
+  return h(
+    "button",
+    { class: `shop-big ${e.checked ? "checked" : ""}`, onclick: () => toggleBought(e) },
+    h("span", { class: "tick", "aria-hidden": "true" }, e.checked ? "✓" : ""),
+    h("span", { class: "what" }, e.display, e.note ? h("small", {}, e.note) : null),
+  );
+}
+
+async function toggleBought(e) {
+  e.checked = !e.checked;
+  renderShopMode();
+  const seq = ++shopMode.seq;
+  try {
+    const res = await api("/api/shopping", { method: "POST", body: { action: "check", id: e.id, checked: e.checked } });
+    if (seq === shopMode.seq) {
+      state.shopping = res;
+      renderShopMode();
+    }
+  } catch (err) {
+    e.checked = !e.checked;
+    renderShopMode();
+    toast(`Kunde inte spara: ${err.message}`);
+  }
+}
+
+$("#shop-go").addEventListener("click", enterShopMode);
+$("#shop-mode-done").addEventListener("click", exitShopMode);
+document.addEventListener("visibilitychange", keepAwake);
+
 async function shopAction(body) {
   state.shopping = await api("/api/shopping", { method: "POST", body });
   renderShopping();
   renderPlan();
+  renderShopMode();
   return state.shopping;
 }
 
@@ -779,6 +867,7 @@ function render() {
   renderPending();
   renderShopping();
   renderPlan();
+  renderShopMode();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;
   $("#badge").textContent = String(n);
@@ -821,6 +910,13 @@ function openSettings() {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && getKey() && run(refresh)());
+
+try {
+  if (localStorage.getItem("matlagret.shopmode")) {
+    show("inkop");
+    enterShopMode();
+  }
+} catch {}
 
 if (getKey()) run(refresh)();
 else openSettings();
