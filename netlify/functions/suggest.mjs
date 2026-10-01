@@ -1,14 +1,14 @@
 // GET  /api/suggest – senaste matplanen (status: empty | planning | ready | error).
 // POST /api/suggest { meals: [{ date, type, style, maxMinutes, people, creativity }] }
 //      Sparar beställningen och startar planeringen i bakgrunden.
-import { json, error, checkKey } from "../lib/http.mjs";
+import { json, error, checkKey, safe } from "../lib/http.mjs";
 import { normalizeOrder } from "../lib/plan.mjs";
 import { loadPlan, savePlan } from "../lib/planner.mjs";
 import { triggerBackground } from "../lib/process.mjs";
 
 const STALE_MS = 16 * 60e3; // bakgrundsfunktioner avbryts efter 15 min
 
-export default async (req) => {
+export default safe("suggest", async (req) => {
   const denied = checkKey(req);
   if (denied) return denied;
 
@@ -36,6 +36,6 @@ export default async (req) => {
     await savePlan(plan);
   }
   return json(plan);
-};
+});
 
 export const config = { path: "/api/suggest" };

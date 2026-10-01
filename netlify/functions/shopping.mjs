@@ -11,7 +11,7 @@
 //   { action: "remove", id }
 //   { action: "clearChecked" }
 import { store, KEYS } from "../lib/store.mjs";
-import { json, error, checkKey } from "../lib/http.mjs";
+import { json, error, checkKey, safe } from "../lib/http.mjs";
 import { loadInventory } from "../lib/inventory.mjs";
 import { emptyList, parseEntry, checkAgainstInventory, addEntry, sectionFor, exportText, displayLine, SECTIONS } from "../lib/shopping.mjs";
 
@@ -32,7 +32,7 @@ const reply = (list, extra = {}) =>
     text: exportText(list),
   });
 
-export default async (req) => {
+export default safe("shopping", async (req) => {
   const denied = checkKey(req);
   if (denied) return denied;
 
@@ -109,6 +109,6 @@ export default async (req) => {
       return error(`Okänd action: ${body.action}`);
   }
   return reply(await save(list));
-};
+});
 
 export const config = { path: "/api/shopping" };

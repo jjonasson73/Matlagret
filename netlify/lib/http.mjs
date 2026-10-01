@@ -19,6 +19,18 @@ export function checkKey(req) {
   return null;
 }
 
+// Fångar oväntade fel så att appen får ett begripligt meddelande (500 med text)
+// i stället för Netlifys tomma 502, och så att felet hamnar i funktionsloggen.
+export const safe = (name, fn) => async (req, context) => {
+  const started = Date.now();
+  try {
+    return await fn(req, context);
+  } catch (e) {
+    console.error(`${name}: ${req.method} misslyckades efter ${Date.now() - started} ms`, e);
+    return error(`Serverfel i ${name}: ${e.message}`, 500);
+  }
+};
+
 export const newId = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 

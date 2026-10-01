@@ -55,7 +55,7 @@ function toast(msg) {
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => (t.hidden = true), 3000);
+  toast.timer = setTimeout(() => (t.hidden = true), msg.length > 60 ? 8000 : 3000);
 }
 
 const run = (fn) => async (...args) => {
@@ -70,13 +70,23 @@ const run = (fn) => async (...args) => {
 
 const state = { inventory: { items: [] }, pending: [], shopping: null, plan: null, order: null, editingOrder: false, view: "lager" };
 
+// Hämtar allt parallellt. Om ett anrop misslyckas visas resten ändå, och
+// meddelandet säger vad som inte gick att hämta.
 async function refresh() {
-  const [inv, pen, shop, plan] = await Promise.all([api("/api/inventory"), api("/api/pending"), api("/api/shopping"), api("/api/suggest")]);
-  state.inventory = inv;
-  state.pending = pen.pending;
-  state.shopping = shop;
-  state.plan = plan;
+  const parts = [
+    ["lagret", "/api/inventory", (d) => (state.inventory = d)],
+    ["förslagen", "/api/pending", (d) => (state.pending = d.pending)],
+    ["inköpslistan", "/api/shopping", (d) => (state.shopping = d)],
+    ["matplanen", "/api/suggest", (d) => (state.plan = d)],
+  ];
+  const results = await Promise.allSettled(parts.map(([, path]) => api(path)));
+  const failed = [];
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") parts[i][2](r.value);
+    else failed.push(`${parts[i][0]} (${r.reason.message})`);
+  });
   render();
+  if (failed.length) throw new Error(`Kunde inte hämta ${failed.join(", ")}`);
 }
 
 // ---- Lager ----
