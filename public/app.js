@@ -506,11 +506,38 @@ function shopRow(e) {
   );
 }
 
+// ---- Håll skärmen tänd ----
+// Handla- och lagaläget ber om att skärmen ska vara tänd. Låset släpps av iOS
+// när appen hamnar i bakgrunden och begärs igen när den syns.
+
+const wake = { reasons: new Set(), lock: null };
+
+async function syncWake() {
+  try {
+    if (wake.reasons.size && !wake.lock && navigator.wakeLock && document.visibilityState === "visible") {
+      wake.lock = await navigator.wakeLock.request("screen");
+      wake.lock.addEventListener("release", () => (wake.lock = null));
+    } else if (!wake.reasons.size && wake.lock) {
+      await wake.lock.release();
+      wake.lock = null;
+    }
+  } catch {
+    // Stöds inte på alla iOS-versioner – då släcks skärmen som vanligt.
+  }
+}
+
+const stayAwake = (reason, on) => {
+  on ? wake.reasons.add(reason) : wake.reasons.delete(reason);
+  syncWake();
+};
+
+document.addEventListener("visibilitychange", syncWake);
+
 // ---- Handlaläge ----
 // Helskärm med stora rader för butiken. Avbockning syns direkt och skickas i
 // bakgrunden; bara det senaste svaret från servern får skriva över listan.
 
-const shopMode = { on: false, wakeLock: null, seq: 0 };
+const shopMode = { on: false, seq: 0 };
 
 const remember = (on) => {
   try {
@@ -518,24 +545,13 @@ const remember = (on) => {
   } catch {}
 };
 
-async function keepAwake() {
-  try {
-    if (shopMode.on && navigator.wakeLock && document.visibilityState === "visible" && !shopMode.wakeLock) {
-      shopMode.wakeLock = await navigator.wakeLock.request("screen");
-      shopMode.wakeLock.addEventListener("release", () => (shopMode.wakeLock = null));
-    }
-  } catch {
-    // Stöds inte på alla iOS-versioner – då släcks skärmen som vanligt.
-  }
-}
-
 function enterShopMode() {
   shopMode.on = true;
   remember(true);
   $("#shop-mode").hidden = false;
   document.body.classList.add("no-scroll");
   renderShopMode();
-  keepAwake();
+  stayAwake("shop", true);
 }
 
 function exitShopMode() {
@@ -543,8 +559,7 @@ function exitShopMode() {
   remember(false);
   $("#shop-mode").hidden = true;
   document.body.classList.remove("no-scroll");
-  shopMode.wakeLock?.release().catch(() => {});
-  shopMode.wakeLock = null;
+  stayAwake("shop", false);
   renderShopping();
 }
 
@@ -591,7 +606,6 @@ async function toggleBought(e) {
 
 $("#shop-go").addEventListener("click", enterShopMode);
 $("#shop-mode-done").addEventListener("click", exitShopMode);
-document.addEventListener("visibilitychange", keepAwake);
 
 async function shopAction(body) {
   state.shopping = await api("/api/shopping", { method: "POST", body });
@@ -770,6 +784,7 @@ function mealCard(m, warnings) {
     m.pairings?.length
       ? h("details", { open: true }, h("summary", {}, "Varför det funkar"), h("ul", { class: "small" }, m.pairings.map((p) => h("li", {}, h("strong", {}, p.ingredients.join(" + ")), " – ", p.why))))
       : null,
+    h("div", { class: "toolbar" }, h("button", { class: "primary", onclick: () => enterCook(m.slot) }, "👩‍🍳 Laga")),
     h("details", {}, h("summary", {}, "Gör så här"), h("ol", { class: "small" }, m.steps.map((s) => h("li", {}, s)))),
   );
 }
@@ -809,6 +824,146 @@ $("#order-go").addEventListener("click", run(async () => {
   state.order = null;
   render();
 }));
+
+// ---- Lagaläge ----
+// Receptet i helskärm med stor text medan man lagar: skärmen hålls tänd,
+// ingredienser och steg bockas av, och steg med en tid får en timer.
+// Läget sparas lokalt så att man fortsätter där man var om appen laddas om.
+
+const cook = { slot: null, done: [], ticked: [], timers: {}, tick: null, audio: null };
+
+const saveCook = () => {
+  try {
+    cook.slot == null
+      ? localStorage.removeItem("matlagret.cook")
+      : localStorage.setItem("matlagret.cook", JSON.stringify({ slot: cook.slot, done: cook.done, ticked: cook.ticked, timers: cook.timers }));
+  } catch {}
+};
+
+const cookMeal = () => state.plan?.meals?.find((m) => m.slot === cook.slot);
+
+// "låt koka 8–10 minuter" → 10. Bara minuter; sekunder och timmar är ovanliga i stegen.
+function stepMinutes(text) {
+  const m = text.match(/(\d+)(?:\s*[–-]\s*(\d+))?\s*(?:min\b|minut)/i);
+  return m ? Number(m[2] ?? m[1]) : null;
+}
+
+function enterCook(slot, restored) {
+  cook.slot = slot;
+  if (!restored) Object.assign(cook, { done: [], ticked: [], timers: {} });
+  saveCook();
+  $("#cook-mode").hidden = false;
+  document.body.classList.add("no-scroll");
+  stayAwake("cook", true);
+  renderCook();
+}
+
+function exitCook() {
+  cook.slot = null;
+  saveCook();
+  clearInterval(cook.tick);
+  cook.tick = null;
+  $("#cook-mode").hidden = true;
+  document.body.classList.remove("no-scroll");
+  stayAwake("cook", false);
+}
+
+const toggleIn = (list, i) => (list.includes(i) ? list.filter((x) => x !== i) : [...list, i]);
+
+function renderCook() {
+  if (cook.slot == null) return;
+  const m = cookMeal();
+  if (!m) {
+    // Planen har bytts ut sedan lagaläget öppnades.
+    if (state.plan) exitCook();
+    return;
+  }
+  $("#cook-title").textContent = m.title;
+  const amount = (x) => `${fmtQty(x.qty)} ${x.unit} ${x.name}`;
+  const ingredients = [...m.uses, ...m.missing];
+  const current = m.steps.findIndex((_, i) => !cook.done.includes(i));
+
+  const root = $("#cook-body");
+  // Genom h() så att tomma delar (null) hoppas över i stället för att skrivas ut.
+  root.replaceChildren(h("div", {},
+    h("p", { class: "muted" }, `${m.people} pers · ${m.minutes} min`),
+    h("h2", { class: "zone" }, "Ingredienser"),
+    h("div", { class: "cook-ingredients" },
+      ingredients.map((x, i) =>
+        h("button", { class: `cook-ing ${cook.ticked.includes(i) ? "checked" : ""}`, onclick: () => { cook.ticked = toggleIn(cook.ticked, i); saveCook(); renderCook(); } },
+          h("span", { class: "tick" }, cook.ticked.includes(i) ? "✓" : ""), amount(x)),
+      ),
+    ),
+    m.substitutions.length ? h("p", { class: "small" }, h("strong", {}, "Byt: "), m.substitutions.map((s) => `${s.use} i stället för ${s.instead}`).join(", ")) : null,
+    h("h2", { class: "zone" }, "Gör så här"),
+    ...m.steps.map((text, i) => cookStep(text, i, i === current)),
+    current === -1 ? h("p", { class: "cook-done" }, "Klart – smaklig måltid! 🍽") : null,
+  ));
+}
+
+function cookStep(text, i, isCurrent) {
+  const mins = stepMinutes(text);
+  const end = cook.timers[i];
+  const left = end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : null;
+  const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return h(
+    "div",
+    { class: `cook-step ${cook.done.includes(i) ? "done" : ""} ${isCurrent ? "current" : ""}` },
+    h("button", { class: "cook-text", onclick: () => { cook.done = toggleIn(cook.done, i); saveCook(); renderCook(); } },
+      h("span", { class: "num" }, String(i + 1)), h("span", {}, text)),
+    mins
+      ? h("button", { class: `timer ${end ? (left ? "running" : "rang") : ""}`, onclick: () => toggleTimer(i, mins) },
+          end ? (left ? `⏱ ${clock(left)}` : "⏰ Klart!") : `⏱ ${mins} min`)
+      : null,
+  );
+}
+
+function toggleTimer(i, mins) {
+  // Ljud kräver ett tryck från användaren på iOS – skapa ljudet nu.
+  try {
+    cook.audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    cook.audio.resume();
+  } catch {}
+  if (cook.timers[i]) delete cook.timers[i];
+  else cook.timers[i] = Date.now() + mins * 60e3;
+  saveCook();
+  runTimers();
+  renderCook();
+}
+
+function runTimers() {
+  clearInterval(cook.tick);
+  cook.tick = null;
+  if (!Object.keys(cook.timers).length) return;
+  cook.tick = setInterval(() => {
+    for (const [i, end] of Object.entries(cook.timers)) {
+      if (end <= Date.now() && !cook.rang?.[i]) {
+        (cook.rang ??= {})[i] = true;
+        beep();
+        toast(`⏰ Steg ${Number(i) + 1} klart`);
+      }
+    }
+    renderCook();
+  }, 1000);
+}
+
+function beep() {
+  try {
+    const ctx = cook.audio;
+    if (!ctx) return;
+    for (let n = 0; n < 3; n++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      gain.gain.value = 0.3;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + n * 0.4);
+      osc.stop(ctx.currentTime + n * 0.4 + 0.25);
+    }
+  } catch {}
+}
+
+$("#cook-done").addEventListener("click", exitCook);
 
 // ---- Förslag medan man skriver ----
 
@@ -885,6 +1040,7 @@ function render() {
   renderShopping();
   renderPlan();
   renderShopMode();
+  renderCook();
   const n = state.pending.filter((p) => p.status === "ready").length;
   $("#badge").hidden = !n;
   $("#badge").textContent = String(n);
@@ -927,6 +1083,16 @@ function openSettings() {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && getKey() && run(refresh)());
+
+try {
+  const saved = JSON.parse(localStorage.getItem("matlagret.cook") ?? "null");
+  if (saved) {
+    Object.assign(cook, { done: saved.done ?? [], ticked: saved.ticked ?? [], timers: saved.timers ?? {} });
+    show("matplan");
+    enterCook(saved.slot, true);
+    runTimers();
+  }
+} catch {}
 
 try {
   if (localStorage.getItem("matlagret.shopmode")) {
