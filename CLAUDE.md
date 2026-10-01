@@ -82,6 +82,8 @@ Statisk frontend plus Netlify Functions. **Ingen Supabase.**
 /api/pending      GET förslag som väntar på bekräftelse
 /api/shopping     GET inköpslistan, POST lägg till (kontrolleras mot lagret),
                   bocka av, ta bort
+/api/recipes      GET sparade recept, POST 👍/👎 på rätter i planen, ta bort
+                  (recept skickas in via /api/ingest?type=recipe)
 ```
 
 **Lagring:** Netlify Blobs. Hela lagret ryms i ett JSON-dokument (~150 rader). Håll lagringen bakom ett tunt gränssnitt (`store.get()` / `store.put()`) så att den går att byta ut.

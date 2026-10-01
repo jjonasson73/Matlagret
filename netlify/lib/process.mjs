@@ -3,9 +3,13 @@ import { store, uploads, KEYS } from "./store.mjs";
 import { loadInventory } from "./inventory.mjs";
 import { updateProposal } from "./pending.mjs";
 import { applyZoneRules } from "./rules.mjs";
-import { parseReceiptPdf, parseReceiptText, parsePhoto } from "./claude.mjs";
+import { parseReceiptPdf, parseReceiptText, parsePhoto, parseRecipe } from "./claude.mjs";
+import { loadRecipes, saveRecipes, makeRecipe } from "./recipes.mjs";
 
 const MAX_IMAGE_PX = 1600;
+
+// Utbytbart i tester, så att Claude inte anropas.
+export const deps = { parseRecipe };
 
 async function shrinkImage(data, mediaType) {
   try {
@@ -120,20 +124,10 @@ export async function processJob(id) {
   try {
     const upload = await uploads.getBinary(id);
     if (!upload) throw new Error("Uppladdningen saknas");
-    const { kind, mediaType, zone, scope = "part", count = 1 } = upload.metadata;
+    const { kind, mediaType, zone, scope = "part", count = 1, purpose = "auto" } = upload.metadata;
     const articles = (await store.get(KEYS.articles)) ?? {};
 
-    let meta, lines, source;
-    if (kind === "pdf" || kind === "text") {
-      const receipt =
-        kind === "pdf"
-          ? await parseReceiptPdf(upload.data, { articles })
-          : await parseReceiptText(upload.data.toString("utf8"), { articles });
-      source = "receipt";
-      meta = { store: receipt.store, date: receipt.date, total: receipt.total };
-      lines = receiptLines(receipt, articles);
-    } else if (kind === "image") {
-      const inventory = await loadInventory();
+    const loadImages = async () => {
       const raw = [{ data: upload.data, mediaType }];
       for (let i = 1; i < count; i++) {
         const part = await uploads.getBinary(`${id}.${i}`);
@@ -147,6 +141,39 @@ export async function processJob(id) {
         }
         images.push(img);
       }
+      return images;
+    };
+
+    let meta, lines, source;
+    if (purpose === "recipe") {
+      // Recept ändrar inte lagret – de sparas direkt i receptbanken.
+      const inventory = await loadInventory();
+      const pantry = [...new Set(inventory.items.filter((i) => i.status !== "out").map((i) => i.name))].slice(0, 200);
+      const parsed = await deps.parseRecipe({
+        images: kind === "image" ? await loadImages() : [],
+        pdf: kind === "pdf" ? upload.data : null,
+        text: kind === "text" ? upload.data.toString("utf8") : null,
+        pantry,
+      });
+      if (!parsed.isRecipe || !parsed.ingredients.length) throw new Error("Hittade inget recept i det som skickades");
+      const recipe = makeRecipe({ ...parsed, source: "import" });
+      const recipes = await loadRecipes();
+      recipes.push(recipe);
+      await saveRecipes(recipes);
+      source = "recipe";
+      meta = { recipeId: recipe.id, title: recipe.title, servings: recipe.servings };
+      lines = [];
+    } else if (kind === "pdf" || kind === "text") {
+      const receipt =
+        kind === "pdf"
+          ? await parseReceiptPdf(upload.data, { articles })
+          : await parseReceiptText(upload.data.toString("utf8"), { articles });
+      source = "receipt";
+      meta = { store: receipt.store, date: receipt.date, total: receipt.total };
+      lines = receiptLines(receipt, articles);
+    } else if (kind === "image") {
+      const inventory = await loadInventory();
+      const images = await loadImages();
       const photo = await parsePhoto(images, { zone, inventory: inventory.items });
       if (zone) photo.zone = zone;
       source = "photo";

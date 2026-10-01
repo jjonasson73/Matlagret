@@ -301,3 +301,55 @@ export function planMeals({ order, candidates, basics, history = [], fixed = [],
     content: [{ type: "text", text: parts.join("\n\n") }],
   });
 }
+
+// ---- Recept från skärmdump, foto eller text (SPEC-matplan.md, del C) ----
+
+export const ParsedRecipe = z.object({
+  isRecipe: z.boolean().describe("false om underlaget inte innehåller ett recept"),
+  title: z.string(),
+  sourceType: z.enum(["social", "bok", "text", "länk"]),
+  sourceUrl: z.string().nullable(),
+  servings: z.number().describe("Antal portioner receptet är skrivet för"),
+  minutes: z.number().nullable(),
+  styles: z.array(z.enum(STYLES)),
+  ingredients: z.array(
+    z.object({
+      name: z.string(),
+      qty: z.number().nullable(),
+      unit: z.string(),
+      confidence: z.enum(["sure", "likely", "unsure"]),
+    }),
+  ),
+  steps: z.array(z.string()),
+  substitutions: z.array(z.object({ instead: z.string(), use: z.string(), note: z.string() })),
+});
+
+const RECIPE_SYSTEM = `Du läser av recept från skärmdumpar (TikTok, Instagram, Reels – receptet står ofta i bildtexten), foton av kokbokssidor, handskrivna lappar och inklistrad text.
+
+- Skriv allt på svenska. Översätt engelska recept och räkna om cups, oz och °F till dl, g och °C.
+- servings: det antal portioner receptet är skrivet för. Sociala recept är ofta för 2; gissa rimligt om det inte står.
+- Vaga mängder ("lite soja", "en skvätt olja", "efter smak") tolkas till en rimlig mängd med confidence "unsure". Fråga aldrig.
+- Salt, peppar och vatten kan ha qty null.
+- steps: korta, tydliga steg i rätt ordning. Behåll tider och temperaturer.
+- sourceType: social för skärmdumpar från sociala medier, bok för kokbok eller lapp, text för inklistrad text. sourceUrl om en länk eller ett konto syns, annars null.
+- styles: bara de stilar som receptet tydligt hör till.
+- substitutions: bara byten mot varor i listan "Finns hemma", och bara när det är rimligt ("crème fraiche i stället för grädde", "spirali i stället för penne").
+- Om underlaget inte innehåller något recept: isRecipe false och tomma listor.`;
+
+export function parseRecipe({ images = [], pdf = null, text = null, pantry = [] }) {
+  const content = [
+    ...images.map((img) => ({
+      type: "image",
+      source: { type: "base64", media_type: img.mediaType, data: Buffer.from(img.data).toString("base64") },
+    })),
+    ...(pdf ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: Buffer.from(pdf).toString("base64") } }] : []),
+    {
+      type: "text",
+      text:
+        (images.length > 1 ? `${images.length} skärmdumpar av samma recept.\n\n` : "") +
+        (text ? `Receptet:\n${text}\n\n` : "Läs av receptet.\n\n") +
+        `Finns hemma: ${pantry.join(", ") || "(okänt)"}`,
+    },
+  ];
+  return parse({ system: RECIPE_SYSTEM, schema: ParsedRecipe, content });
+}

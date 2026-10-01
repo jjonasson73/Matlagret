@@ -47,6 +47,9 @@
         <label class="btn">📄 Kvitto
           <input type="file" id="in-file" accept="application/pdf,image/*,text/plain" hidden>
         </label>
+        <label class="btn" title="Skärmdump eller foto av ett recept – flera bilder blir ett recept">📖 Recept
+          <input type="file" id="in-recipe" accept="image/*,application/pdf" multiple hidden>
+        </label>
         <button id="btn-paste" class="btn">📋 Klistra in</button>
       </div>
       <div id="scan" class="scan" hidden>
@@ -83,6 +86,7 @@
       <div id="plan-status"></div>
       <div id="plan-meals"></div>
       <div id="plan-shopping"></div>
+      <div id="recipes"></div>
     </section>
 
     <section id="view-inkop" class="view" hidden>
@@ -188,7 +192,11 @@
 
   <dialog id="dlg-paste">
     <form method="dialog">
-      <h2>Klistra in kvittotext</h2>
+      <h2>Klistra in text</h2>
+      <div class="segmented">
+        <label><input type="radio" name="type" value="auto" checked> Kvitto</label>
+        <label><input type="radio" name="type" value="recipe"> Recept</label>
+      </div>
       <textarea name="text" rows="10"></textarea>
       <menu>
         <button value="cancel" formnovalidate>Avbryt</button>
